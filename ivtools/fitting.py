@@ -8,16 +8,12 @@ from . import fit_utils
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def lin_subtraction(x,y):
-    # Step 1. Take some points.
+def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
     best_lin_r2 = 0
-    # best_start = None
-    # best_end = None
     best_p = None
     for start in range(0,len(y)//3):
-    # for start in [0]:
-        # if y[start] >= voltage_cutoff and start !=0:
-        #     continue
+        if y[start] >= voltage_cutoff and start !=0:
+            continue
         for end in range(1,len(y)):
             if end - start < 3:
                 continue
@@ -33,20 +29,14 @@ def lin_subtraction(x,y):
                     lin_r2 = 0
                 if lin_r2 > best_lin_r2:
                     best_lin_r2 = lin_r2
-                    # best_start = start
-                    # best_end = end
                     best_p = p
-    # Step 3. If the linear fit is good, subtract it from all y values
     # FINDME 1
     # if best_lin_r2 > .75:
     # if best_lin_r2 > .95:
     # if best_lin_r2 > .95:
     # if best_lin_r2 > .6:
-    if best_lin_r2:
-        # print(f'Best linear fit found for segment {i} in file {segment["File"].unique()[0]}: R² = {best_lin_r2}.')
+    if best_lin_r2 and best_lin_r2>linear_sub_criterion:
         lin_fit_full_y = np.polyval(best_p, x)
-        # if plotit:
-        #     ax.plot(x[best_start:best_end],y[best_start:best_end],marker='D',linestyle='-.',markersize=3,label='Fit Area')
         y = y - lin_fit_full_y
     return y
 
@@ -95,9 +85,9 @@ def masking(x,y,noise_level):
         # x[~zero_mask] = 0 
         # y[~zero_mask] = 0 
 
-        noise_mask = np.abs(y) >= noise_level
-        keep_mask = keep_mask & noise_mask
-        application_mask = application_mask & noise_mask
+        # noise_mask = np.abs(y) >= noise_level
+        # keep_mask = keep_mask & noise_mask
+        # application_mask = application_mask & noise_mask
 
         # x[~noise_mask] = 0 
         # y[~noise_mask] = 0 
@@ -108,35 +98,15 @@ def masking(x,y,noise_level):
     return x,y,keep_mask,application_mask
 
 
-# def masking(x, y, noise_level):
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-
-#     N = len(y)
-
-#     # --- Start with full masks ---
-#     keep_mask = np.ones(N, dtype=bool)
-
-#     # --- 1. Monotonicity mask (y increasing) ---
-#     monotonic_mask = np.concatenate([[True], np.diff(y) >= 0])
-#     keep_mask &= monotonic_mask
-
-#     # --- 2. Noise mask ---
-#     if noise_level is not None and noise_level > 0:
-#         noise_mask = np.abs(y) >= noise_level
-#         keep_mask &= noise_mask
-
-#     # --- Final masked data ---
-#     x_out = x[keep_mask]
-#     y_out = y[keep_mask]
-
-#     # application_mask = the same as keep_mask (you only need one)
-#     application_mask = keep_mask.copy()
-
-#     return x_out, y_out, keep_mask, application_mask
-
-
-def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_level=1.5e-5):
+def fit_IV_for_Ic(
+        df, 
+        voltage_cutoff, 
+        linear_sub_criterion,
+        power_law_criterion,
+        min_fit_points=3, 
+        max_fit_points=5, 
+        noise_level=1.5e-5
+        ):
     """
     Analyze I–V data to extract segments, perform power-law fitting,
     and estimate the critical current (I_c) for each segment.
@@ -185,7 +155,7 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
             simple_Ics.append(None)
             I_cs.append(None)
             I_cHs.append(None)
-            simple_Ics.append(None)
+            # simple_Ics.append(None)
             best_starts.append(None)
             best_ends.append(None)
             segments_power.append(pd.DataFrame(columns=['Current [A]', 'Voltage [V]']))
@@ -198,36 +168,8 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
         best_k = best_b = best_Ic = None
         best_start = None
 
-
-
-        # Simple Ic calculation without fitting
-        if cutoff_idx != 0: 
-            simple_Ic = np.mean(x[cutoff_idx-1:cutoff_idx])
-        else:
-            simple_Ic = None
-
-        files_to_inspect = [
-            # 'p134856_102225',
-            # 'p153647_102225', #H||c 20 K
-            # 'p173228_102225', #H||c 20 K second run
-            # 'p191307_102225' #H||c 20 K third run
-            # 'p172846_102325', # H||45 20K, has outliers
-            # 'p145009_102325', # H||45 30K has outliers
-            # 'p181832_102425'
-            # 'p014_153958_103025',
-            # 'p027_185850_103025'
-            # 'p111616_102325'
-            # 'p161155_102325'
-            
-        ]
-
-        if df['File'].unique()[0] in files_to_inspect:
-            plotit=True
-        else:
-            plotit=False
-
         if np.any(y > voltage_cutoff):
-            y = lin_subtraction(x,y)
+            y = lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion)
 
                 
         x0 = x.copy()
@@ -253,10 +195,7 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
             # if lin_r2_full> 0.6:
             #     continue # if the full linear fit is too good, skip power law fitting
 
-            print(lin_r2_full)
 
-            # for start in range(0, cutoff_idx + 1):  # include data before cutoff
-            #     for end in range(cutoff_idx,cutoff_idx+max_fit_points): # include some points after cutoff
             for start in range(0,len(y)-1):
                 for end in range(1,len(y)):
                     # if end - start < 3:
@@ -277,7 +216,7 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
                         r2 = fit_utils.compute_R2(x, y, k, b) if k is not None and b is not None else -np.inf
                         if k is not None and r2 > best_r2 and b > 0 and r2>lin_r2_full:
                             # FINDME 2
-                            if r2>0.95: # use 99 with noise supression
+                            if r2>power_law_criterion: # use 99 with noise supression
                             # if r2>0.5: # 
                                 best_k = k
                                 best_b = b
@@ -297,17 +236,10 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
             I_cHs.append(best_Ic * H_avgs[-1])
             best_starts.append(best_start)
             best_ends.append(best_end)
-            simple_Ics.append(simple_Ic)
+            # simple_Ics.append(simple_Ic)
             # segments_power.append(segment.iloc[best_start:].copy())
             segments_power.append(segment.iloc[best_start:best_end][['Current [A]', 'Voltage [V]']].copy())
             dlen.append(datapoints)
-
-            if plotit:
-
-                x_fit = np.linspace(np.min(x), np.max(x), 100)
-                y_fit = best_k * x_fit ** best_b
-                ax.plot(x_fit, y_fit, linestyle='--', color='salmon', label=f'Power-law fit\n(R²={best_r2:.3f}, n={best_b:.3f}, k={best_k:.3e}, I$_c$={best_Ic*1e3:.2f} mA)')
-
 
 
 
@@ -319,7 +251,7 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
             I_cHs.append(None)
             best_starts.append(None)
             best_ends.append(None)
-            simple_Ics.append(None)
+            # simple_Ics.append(None)
             segments_power.append(pd.DataFrame(columns=['Current [A]', 'Voltage [V]']))
             dlen.append(datapoints)
 
@@ -349,21 +281,21 @@ def fit_IV_for_Ic(df, voltage_cutoff, min_fit_points=3, max_fit_points=5, noise_
     # print('Len of segments returned:', len(segments))
     # print('Type of processed_segments returned:', type(processed_segments))
     # print('Len of processed_segments returned:', len(processed_segments))
-        print('__________________________________')
-        print('i | mask | y0 | len_adj_y | final_y |')
-        j = 0
-        for i, val in enumerate(len_adjusted_y):
-            a = keep_mask[i]
-            b = y0[i]
-            c = len_adjusted_y[i]
-            if np.isnan(val):
-                d = 'NaN'
-            else:
-                d = y0[keep_mask][j]
-                j+=1
-            print(i,'|',a,'|',b,'|',c,'|',d,'|')
-        print('__________________________________')
+        # print('__________________________________')
+        # print('i | mask | y0 | len_adj_y | final_y |')
+        # j = 0
+        # for i, val in enumerate(len_adjusted_y):
+        #     a = keep_mask[i]
+        #     b = y0[i]
+        #     c = len_adjusted_y[i]
+        #     if np.isnan(val):
+        #         d = 'NaN'
+        #     else:
+        #         d = y0[keep_mask][j]
+        #         j+=1
+        #     print(i,'|',a,'|',b,'|',c,'|',d,'|')
+        # print('__________________________________')
 
 
-    return fit_successes, I_cs, ks, bs, r2s, segments, segments_power, processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, simple_Ics, dlen
+    return fit_successes, I_cs, ks, bs, r2s, segments, segments_power, processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, dlen
 

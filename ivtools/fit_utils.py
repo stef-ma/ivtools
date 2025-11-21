@@ -40,7 +40,7 @@ def split_by_jump(df, drop_factor=0.5):
 
 
 
-def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.5):
+def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.9):
     """
     Determine the region of interest (ROI) around a specified index in the data.
 
@@ -125,6 +125,26 @@ def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.5):
         # return flat_center, region_end # left only
         # return region_start, flat_center # rifht only
 
+
+def safe_mean(V):
+    if len(V) == 0:
+        return np.nan  #
+    if len(V) < 5:      # too short for SavGol
+        return np.mean(V)
+
+    # build a valid odd window length
+    w = min(len(V) - 1, int(len(V)//2 + 3) | 1)
+    if w <= 2:  # must be > polyorder
+        return np.mean(V)
+
+    p = min(2, w - 1)  # ensure polyorder < window_length
+
+    try:
+        return np.mean(savgol_filter(V, window_length=w, polyorder=p))
+    except Exception:
+        return np.mean(V)
+
+
 def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx'):
     '''
     Extracts the voltage, current, field and temperature for a single IV pulse iv_file class.
@@ -146,9 +166,10 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
     left_lROI,left_hROI = find_ROI(iv_file,left)
     right_lROI, right_hROI = find_ROI(iv_file,right)
 
-    V = np.mean(iv_file.V[lROI:hROI])
-    leftV = np.mean(iv_file.V[left_lROI:left_hROI])
-    rightV = np.mean(iv_file.V[right_lROI:right_hROI])
+
+    V = safe_mean(iv_file.V[lROI:hROI])
+    leftV = safe_mean(iv_file.V[left_lROI:left_hROI])
+    rightV = safe_mean(iv_file.V[right_lROI:right_hROI])
     # print(leftV,V,rightV)
     V = V - (leftV+rightV)/2 # 1st option
     # V = V - leftV # 2nd option
@@ -163,7 +184,9 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
         'noise_std':error_std,
         'noise_rms':error_rms,
         'dBdt [T/s]': dBdt,
-        'Temperature [K]': T
+        'Temperature [K]': T,
+        'lROI' : lROI,
+        'rROI' : hROI
     }
     # print(leftV,V,rightV)
     return result,I,V,B,dBdt,T

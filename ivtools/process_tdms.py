@@ -41,6 +41,8 @@ def process_tdms(
     noise_level,
     voltage_gain,
     current_gain,
+    linear_sub_criterion,
+    power_law_criterion,
     voltage_channel='Voltage',
     current_channel='Current',
     magnet='Mid Pulse',
@@ -62,7 +64,7 @@ def process_tdms(
         )
 
     if not ivf.passed:
-        return pd.DataFrame([]), pd.DataFrame([]), pd.DataFrame([])
+        return pd.DataFrame([]), pd.DataFrame([]), ivf
     
     if verbose:
         start = time.perf_counter()
@@ -70,7 +72,8 @@ def process_tdms(
     highs = ivf.tops
     lows = ivf.troths
     iv = []
-    ivs = []
+    # ivs = []
+
     fits = []
 
     tail = re.split('_', os.path.basename(fp))[-1].replace('.tdms', '')
@@ -108,9 +111,9 @@ def process_tdms(
                 'Vavg [V]': ivf.Vavg[j],
                 'Time [s]': ivf.t[top]
             })
-            result['Field [T]'] = result['Field [T]']*1.05 if magnet!='PPMS' else result['Field [T]']  # Field Correction
+            # result['Field [T]'] = result['Field [T]']*1.05 if magnet!='PPMS' else result['Field [T]']  # Field Correction
             iv.append(result)
-            ivs.append(result)
+            # ivs.append(result)
 
         df = pd.DataFrame(iv)
 
@@ -121,9 +124,11 @@ def process_tdms(
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         with suppress_print(verbose):
-            fit_successes, I_cs, ks, bs, r2s, segments, segments_power,processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, simple_Ics, dlen = fitting.fit_IV_for_Ic(
+            fit_successes, I_cs, ks, bs, r2s, segments, segments_power,processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, dlen = fitting.fit_IV_for_Ic(
                 df, 
                 voltage_cutoff, 
+                linear_sub_criterion,
+                power_law_criterion,
                 min_fit_points=3,
                 max_fit_points=5,
                 noise_level = noise_level
@@ -134,6 +139,8 @@ def process_tdms(
                 df['Processed Voltage [V]'] = processed_df['Voltage [V]']
         if w and verbose:
             print(f"[Warning] Fit warnings detected in processing {os.path.basename(fp)}.")
+    
+    ivs = df
 
     # print(f"File {os.path.basename(fp)}: \nfit successes {len(fit_successes)}: {fit_successes}\nbest_starts {len(best_starts)}: {best_starts}\n Ics {len(I_cs)}: {I_cs}")
 
@@ -158,7 +165,7 @@ def process_tdms(
                 # 'Fit OK?': fit_success,
                 'fit_start_index': best_starts[k],
                 'fit_end_index': best_ends[k],
-                'simple I_c': simple_Ics[k],
+                # 'simple I_c': simple_Ics[k],
                 'I_c': I_cs[k],
                 'I_cH': I_cHs[k],
                 'k': ks[k],
