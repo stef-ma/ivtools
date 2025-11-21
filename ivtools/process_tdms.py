@@ -43,6 +43,8 @@ def process_tdms(
     current_gain,
     linear_sub_criterion,
     power_law_criterion,
+    minfp,
+    maxfp,
     voltage_channel='Voltage',
     current_channel='Current',
     magnet='Mid Pulse',
@@ -129,8 +131,8 @@ def process_tdms(
                 voltage_cutoff, 
                 linear_sub_criterion,
                 power_law_criterion,
-                min_fit_points=3,
-                max_fit_points=5,
+                min_fit_points=minfp,
+                max_fit_points=maxfp,
                 noise_level = noise_level
                 )
             if len(processed_segments)>0:

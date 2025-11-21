@@ -30,11 +30,7 @@ def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
                 if lin_r2 > best_lin_r2:
                     best_lin_r2 = lin_r2
                     best_p = p
-    # FINDME 1
-    # if best_lin_r2 > .75:
-    # if best_lin_r2 > .95:
-    # if best_lin_r2 > .95:
-    # if best_lin_r2 > .6:
+
     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
         lin_fit_full_y = np.polyval(best_p, x)
         y = y - lin_fit_full_y
@@ -85,9 +81,9 @@ def masking(x,y,noise_level):
         # x[~zero_mask] = 0 
         # y[~zero_mask] = 0 
 
-        # noise_mask = np.abs(y) >= noise_level
-        # keep_mask = keep_mask & noise_mask
-        # application_mask = application_mask & noise_mask
+        noise_mask = np.abs(y) >= noise_level
+        keep_mask = keep_mask & noise_mask
+        application_mask = application_mask & noise_mask
 
         # x[~noise_mask] = 0 
         # y[~noise_mask] = 0 
@@ -96,6 +92,42 @@ def masking(x,y,noise_level):
     y = y[application_mask] 
 
     return x,y,keep_mask,application_mask
+
+def anchor_low_voltage(x, y, noise_level):
+    """
+    Add a synthetic low-current / low-voltage point to stabilize power-law fits.
+    """
+    if noise_level is None or noise_level <= 0:
+        return x, y
+
+    # Smallest positive current in the dataset
+    pos_x = x[x > 0]
+    if len(pos_x) == 0:
+        return x, y  # nothing meaningful to anchor
+
+    I_min = np.min(pos_x)
+
+    # Create a synthetic anchor point
+    I_anchor = 0.1 * I_min      # one order of magnitude lower
+    V_anchor = 0      # baseline measurable voltage
+    # V_anchor = 0.001 * noise_level      # baseline measurable voltage
+    
+    # # Append
+    # x_aug = np.append(x, I_anchor)
+    # y_aug = np.append(y, V_anchor)
+
+
+    # # Doubling down?
+    # I_anchor = I_min*0.001
+    # V_anchor = 0
+
+
+    # Append and re-sort
+    x_aug = np.append(x, I_anchor)
+    y_aug = np.append(y, V_anchor)
+    order = np.argsort(x_aug)
+
+    return x_aug[order], y_aug[order]
 
 
 def fit_IV_for_Ic(
@@ -168,16 +200,23 @@ def fit_IV_for_Ic(
         best_k = best_b = best_Ic = None
         best_start = None
 
+        
         if np.any(y > voltage_cutoff):
             y = lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion)
-
-                
+           
         x0 = x.copy()
         y0 = y.copy()
 
 
         x,y,keep_mask,application_mask = masking(x,y,noise_level)
 
+        # if np.any(y > voltage_cutoff):
+        #     y = lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion)
+
+     
+
+        # Add stabilizing anchor point
+        x, y = anchor_low_voltage(x, y, noise_level)
 
 
 
@@ -191,26 +230,13 @@ def fit_IV_for_Ic(
                 lin_r2_full = 1 - ss_res_lin[0] / ss_tot_lin
             except:
                 lin_r2_full = -np.inf
-
-            # if lin_r2_full> 0.6:
-            #     continue # if the full linear fit is too good, skip power law fitting
-
-
             for start in range(0,len(y)-1):
                 for end in range(1,len(y)):
-                    # if end - start < 3:
-                    #     continue
-                    # if y[start] >= voltage_cutoff and start !=0:
-                    #     continue
                     if len(x[start:end]) < min_fit_points or len(x[start:end]) > max_fit_points:
                         continue
-                    # if np.all(y[start:end] < voltage_cutoff):
-                    # if y[start:end].all()<voltage_cutoff: # My logic when I wrote this was bad, but it actually works as a noise guard. It rejects all fits that include values below the ec.
-                        # continue    
                     else:
                         x_fit = x[start:end]
                         y_fit = y[start:end]
-
 
                         k, b = fit_utils.try_fit_power_law(x_fit, y_fit)
                         r2 = fit_utils.compute_R2(x, y, k, b) if k is not None and b is not None else -np.inf
@@ -272,6 +298,7 @@ def fit_IV_for_Ic(
                 ii +=1
         # len_adjusted_x = x0[keep_mask]
         # len_adjusted_y = y0[keep_mask]
+        # len_adjusted_x, len_adjusted_y = anchor_low_voltage(len_adjusted_x, len_adjusted_y, noise_level) 
         segment['Current [A]'] = len_adjusted_x
         segment['Voltage [V]'] = len_adjusted_y
         processed_segments.append(segment)

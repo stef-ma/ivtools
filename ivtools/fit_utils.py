@@ -126,23 +126,33 @@ def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.9):
         # return region_start, flat_center # rifht only
 
 
-def safe_mean(V):
-    if len(V) == 0:
-        return np.nan  #
-    if len(V) < 5:      # too short for SavGol
-        return np.mean(V)
+# def safe_mean(V):
+#     if len(V) == 0:
+#         mean = np.nan  #
+#     if len(V) < 5:      # too short for SavGol
+#         mean = np.mean(V)
 
-    # build a valid odd window length
-    w = min(len(V) - 1, int(len(V)//2 + 3) | 1)
-    if w <= 2:  # must be > polyorder
-        return np.mean(V)
+#     # build a valid odd window length
+#     w = min(len(V) - 1, int(len(V)//2 + 3) | 1)
+#     if w <= 2:  # must be > polyorder
+#         mean = np.mean(V)
 
-    p = min(2, w - 1)  # ensure polyorder < window_length
+#     p = min(1, w - 1)  # ensure polyorder < window_length
 
-    try:
-        return np.mean(savgol_filter(V, window_length=w, polyorder=p))
-    except Exception:
-        return np.mean(V)
+#     try:
+#         volts = savgol_filter(V, window_length=w, polyorder=p)
+#         mean = np.mean(volts)
+#     except Exception:
+#         volts = V
+#         mean = np.mean(V)
+#     return mean, volts
+
+def safe_mean(V): # Avoid extra math
+    volts = V
+    mean = np.mean(V)
+    return mean, volts
+
+
 
 
 def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx'):
@@ -167,9 +177,9 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
     right_lROI, right_hROI = find_ROI(iv_file,right)
 
 
-    V = safe_mean(iv_file.V[lROI:hROI])
-    leftV = safe_mean(iv_file.V[left_lROI:left_hROI])
-    rightV = safe_mean(iv_file.V[right_lROI:right_hROI])
+    V, processed_V = safe_mean(iv_file.V[lROI:hROI])
+    leftV, _ = safe_mean(iv_file.V[left_lROI:left_hROI])
+    rightV, _ = safe_mean(iv_file.V[right_lROI:right_hROI])
     # print(leftV,V,rightV)
     V = V - (leftV+rightV)/2 # 1st option
     # V = V - leftV # 2nd option
@@ -186,7 +196,8 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
         'dBdt [T/s]': dBdt,
         'Temperature [K]': T,
         'lROI' : lROI,
-        'rROI' : hROI
+        'rROI' : hROI,
+        'Denoised Voltage Array [V]': processed_V
     }
     # print(leftV,V,rightV)
     return result,I,V,B,dBdt,T
@@ -220,6 +231,58 @@ def fit_power_law(x, y):
     a = np.exp(log_a)
 
     return a, b
+
+import statsmodels.api as sm
+
+def fit_power_law_wls(x, y, noise_level):
+    mask = (x > 0) & (y > noise_level)
+    log_x = np.log(x[mask])
+    log_y = np.log(y[mask])
+
+    # Filter out invalid values
+    # mask = (x > 1e-9) & (y > 0)
+    # if np.count_nonzero(mask) < 2:
+    #     raise ValueError("Not enough valid data points for log-log fit.")
+    
+    # log_x = np.log(x[mask])
+    # log_y = np.log(y[mask])
+    
+    # Weights: proportional to actual voltage
+    # (low voltages have larger fractional noise)
+    w = y[mask]  # or 1 / y, depending on noise model
+
+    X = sm.add_constant(log_x)
+    model = sm.WLS(log_y, X, weights=w)
+    results = model.fit()
+
+    log_a = results.params[0]
+    b = results.params[1]
+    a = np.exp(log_a)
+    return a, b#, results
+
+import numpy as np
+from scipy.optimize import curve_fit
+
+def powerlaw(I, k, n):
+    return k * I**n
+
+def fit_power_law_curvefit(x, y, sigma=None):
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    # Mask invalid
+    mask = (x > 0) & (y >= 0)
+    x = x[mask]
+    y = y[mask]
+
+    # Initial guesses
+    n0 = 10
+    k0 = y[np.argmax(x)] / x[np.argmax(x)]**n0
+
+    popt, pcov = curve_fit(powerlaw, x, y, p0=[k0, n0], sigma=sigma, absolute_sigma=True)
+
+    k, n = popt
+    return k, n#, pcov
 
 def compute_R2(x, y, a, b):
     """
@@ -264,6 +327,8 @@ def try_fit_power_law(x, y):
     """
     try:
         return fit_power_law(x, y)
+        # return fit_power_law_wls(x,y,10e-6)
+        # return fit_power_law_curvefit(x,y)
     except Exception:
         return None, None
     
