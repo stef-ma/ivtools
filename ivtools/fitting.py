@@ -8,9 +8,40 @@ from . import fit_utils
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+# def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
+#     best_lin_r2 = 0
+#     best_p = None
+#     for start in range(0,len(y)//3):
+#         if y[start] >= voltage_cutoff and start !=0:
+#             continue
+#         for end in range(1,len(y)):
+#             if end - start < 3:
+#                 continue
+#             else:
+#                 x_fit = x[start:end]
+#                 y_fit = y[start:end]
+#                 # Step 2. Fit linear and compute R2
+#                 try:
+#                     p,ss_res, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
+#                     ss_tot = np.sum((y_fit - np.mean(y_fit)) ** 2)
+#                     lin_r2 = 1 - ss_res[0] / ss_tot
+#                 except:
+#                     lin_r2 = 0
+#                 if lin_r2 > best_lin_r2:
+#                     best_lin_r2 = lin_r2
+#                     best_p = p
+
+#     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
+#         lin_fit_full_y = np.polyval(best_p, x)
+#         y = y - lin_fit_full_y
+#     return y
 def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
     best_lin_r2 = 0
     best_p = None
+
+    fit_check_y = y[y<voltage_cutoff]
+    fit_check_x = x[y<voltage_cutoff]
+
     for start in range(0,len(y)//3):
         if y[start] >= voltage_cutoff and start !=0:
             continue
@@ -22,9 +53,11 @@ def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
                 y_fit = y[start:end]
                 # Step 2. Fit linear and compute R2
                 try:
-                    p,ss_res, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
-                    ss_tot = np.sum((y_fit - np.mean(y_fit)) ** 2)
-                    lin_r2 = 1 - ss_res[0] / ss_tot
+                    p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
+                    y_pred = np.polyval(p, fit_check_x)
+                    ss_res = np.sum((fit_check_y - y_pred) ** 2)
+                    ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
+                    lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
                 except:
                     lin_r2 = 0
                 if lin_r2 > best_lin_r2:
@@ -204,24 +237,29 @@ def fit_IV_for_Ic(
         if np.any(y > voltage_cutoff):
             y = lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion)
            
-        x0 = x.copy()
-        y0 = y.copy()
+            x0 = x.copy()
+            y0 = y.copy()
 
+            orig_indices = np.arange(len(x))
+            print(f'\n\n\n\nIndices originally:\n{orig_indices}')
 
-        x,y,keep_mask,application_mask = masking(x,y,noise_level)
+            x,y,keep_mask,application_mask = masking(x,y,noise_level)
+
+            orig_indices = orig_indices[application_mask]
+        
+
+            # Add stabilizing anchor point
+            x, y = anchor_low_voltage(x, y, noise_level)
+            print(f'Indices after masking:\n{orig_indices}')
+
+            # anchor has no original index → use -1 or None
+            orig_indices = np.append(orig_indices, -1)
+            print(f'Indices after adding -1:\n{orig_indices}')
+            order = np.argsort(orig_indices)
+            orig_indices = orig_indices[order]
+            print(f'Indices after sorting:\n{orig_indices}')
 
         # if np.any(y > voltage_cutoff):
-        #     y = lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion)
-
-     
-
-        # Add stabilizing anchor point
-        x, y = anchor_low_voltage(x, y, noise_level)
-
-
-
-
-        if np.any(y > voltage_cutoff):
 
             # Find best linear fit to dataset to compare power law fit R2 against
             try: 
@@ -230,6 +268,8 @@ def fit_IV_for_Ic(
                 lin_r2_full = 1 - ss_res_lin[0] / ss_tot_lin
             except:
                 lin_r2_full = -np.inf
+            # if lin_r2_full>.95:
+            #     continue
             for start in range(0,len(y)-1):
                 for end in range(1,len(y)):
                     if len(x[start:end]) < min_fit_points or len(x[start:end]) > max_fit_points:
@@ -248,8 +288,10 @@ def fit_IV_for_Ic(
                                 best_b = b
                                 best_r2 = r2
                                 best_Ic = (voltage_cutoff / k) ** (1 / b)
-                                best_start = start
-                                best_end = end
+                                # best_start = start
+                                # best_end = end
+                                best_start = orig_indices[start] if orig_indices[start]!=-1 else 0
+                                best_end = orig_indices[end]
             # print (f'Best power law fit found for segment {i} in file {segment["File"].unique()[0]}: R² = {best_r2}.')
         fit_successful = best_k is not None and best_b is not None
         fit_successes.append(fit_successful)
@@ -286,6 +328,9 @@ def fit_IV_for_Ic(
         len_adjusted_x = []
         len_adjusted_y = []
         ii = 0
+        # if len(y0)!=len(y):
+        #     print('alarm')
+        # # print('')
         for el in keep_mask:
             if not el:
             # if el:
