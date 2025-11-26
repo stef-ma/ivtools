@@ -39,15 +39,15 @@ def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
     best_lin_r2 = 0
     best_p = None
 
-    fit_check_y = y[y<voltage_cutoff]
-    fit_check_x = x[y<voltage_cutoff]
+    fit_check_y = y[y<voltage_cutoff*.5]
+    fit_check_x = x[y<voltage_cutoff*.5]
 
     for start in range(0,len(y)//3):
         if y[start] >= voltage_cutoff and start !=0:
             continue
-        # for end in range(1,len(y)):
-        for end in [len(y)-1]:
-            if end - start < 3:
+        for end in range(1,len(y)):
+        # for end in [len(y)-1]:
+            if end - start < 2:
                 continue
             else:
                 x_fit = x[start:end]
@@ -66,8 +66,18 @@ def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
                     best_p = p
 
     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
+        # plt.clf()
+        # print('\n\n\n\nSubtracted!\n\n\n\n')
+        # plt.plot(np.linspace(1,len(y),len(y)),y)
         lin_fit_full_y = np.polyval(best_p, x)
         y = y - lin_fit_full_y
+        # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
+        # plt.plot(np.linspace(1,len(y),len(y)),y)
+        # plt.gca().axhspan(0,0.01e-6)
+        # plt.gca().axhspan(24.9e-6,25.01e-6)
+        # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
+        # plt.gca().grid()
+        # plt.show()
     return y
 
 def masking(x,y,noise_level):
@@ -242,7 +252,7 @@ def fit_IV_for_Ic(
             y0 = y.copy()
 
             orig_indices = np.arange(len(x))
-            print(f'\n\n\n\nIndices originally:\n{orig_indices}')
+            # print(f'\n\n\n\nIndices originally:\n{orig_indices}')
 
             x,y,keep_mask,application_mask = masking(x,y,noise_level)
 
@@ -251,14 +261,14 @@ def fit_IV_for_Ic(
 
             # Add stabilizing anchor point
             x, y = anchor_low_voltage(x, y, noise_level)
-            print(f'Indices after masking:\n{orig_indices}')
+            # print(f'Indices after masking:\n{orig_indices}')
 
             # anchor has no original index → use -1 or None
             orig_indices = np.append(orig_indices, -1)
-            print(f'Indices after adding -1:\n{orig_indices}')
+            # print(f'Indices after adding -1:\n{orig_indices}')
             order = np.argsort(orig_indices)
             orig_indices = orig_indices[order]
-            print(f'Indices after sorting:\n{orig_indices}')
+            # print(f'Indices after sorting:\n{orig_indices}')
 
         # if np.any(y > voltage_cutoff):
 
@@ -272,7 +282,8 @@ def fit_IV_for_Ic(
             # if lin_r2_full>.95:
             #     continue
             for start in range(0,len(y)-1):
-                for end in range(1,len(y)):
+                # for end in range(1,len(y)):
+                for end in [len(y)-1]:
                     if len(x[start:end]) < min_fit_points or len(x[start:end]) > max_fit_points:
                         continue
                     else:

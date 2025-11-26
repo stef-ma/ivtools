@@ -30,43 +30,7 @@ def suppress_print(verbose=True):
             yield
         # At this point, buffer.getvalue() contains suppressed output if needed
 
-# def process_tdms(
-#     fp,
-#     sample,
-#     temperature,
-#     angle,
-#     tfield,
-#     resistor,
-#     voltage_cutoff,
-#     noise_level,
-#     voltage_gain,
-#     current_gain,
-#     linear_sub_criterion,
-#     power_law_criterion,
-#     minfp,
-#     maxfp,
-#     voltage_channel='Voltage',
-#     current_channel='Current',
-#     magnet='Mid Pulse',
-#     ppms_field=None,
-#     verbose = False
-#     ):
-    
-#     fname = os.path.basename(fp)
 
-#     ivf = iv_io.IV_File(
-#         fp, 
-#         resistor, 
-#         temperature, 
-#         voltage_gain, 
-#         current_gain, 
-#         voltage_channel=voltage_channel,
-#         current_channel=current_channel,
-#         ppms_field=ppms_field
-#         )
-
-#     if not ivf.passed:
-#         return pd.DataFrame([]), pd.DataFrame([]), ivf
 def process_ivf(
     ivf,
     fp,
@@ -74,19 +38,13 @@ def process_ivf(
     temperature,
     angle,
     tfield,
-    # resistor,
     voltage_cutoff,
     noise_level,
-    # voltage_gain,
-    # current_gain,
     linear_sub_criterion,
     power_law_criterion,
     minfp,
     maxfp,
-    # voltage_channel='Voltage',
-    # current_channel='Current',
     magnet='Mid Pulse',
-    # ppms_field=None,
     verbose = False
     ):
     

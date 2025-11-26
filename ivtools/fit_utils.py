@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import savgol_filter
 
-from . import metadata
+from . import iv_io
 
 def split_by_jump(df, drop_factor=0.5):
     """
@@ -171,7 +171,7 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
     dBdt = Bdiff/tdiff
     # dBdt = np.mean(np.diff(np.array([datafile.t[lROI:hROI],datafile.B[lROI:hROI]])))
     
-    T = metadata.extract_numeric_temperature(iv_file.T)
+    T = iv_io.extract_numeric_temperature(iv_file.T)
     
     left_lROI,left_hROI = find_ROI(iv_file,left)
     right_lROI, right_hROI = find_ROI(iv_file,right)
@@ -203,6 +203,64 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
     return result,I,V,B,dBdt,T
 
 
+
+def powerlaw(I, k, n):
+    return k * I**n
+
+# from scipy.optimize import curve_fit
+
+# def fit_power_law_curvefit(x, y, sigma=None):
+#     x = np.asarray(x)
+#     y = np.asarray(y)
+
+#     # Mask invalid
+#     mask = (x > 0) & (y >= 0)
+#     x = x[mask]
+#     y = y[mask]
+
+#     # Initial guesses
+#     n0 = 10
+#     k0 = y[np.argmax(x)] / x[np.argmax(x)]**n0
+
+#     popt, pcov = curve_fit(powerlaw, x, y, p0=[k0, n0], sigma=sigma, absolute_sigma=True)
+
+#     k, n = popt
+#     return k, n#, pcov
+
+
+# from scipy.odr import ODR, Model, RealData
+
+# def fit_power_law_odr(x, y):
+#     mask = (x>0) & (y>0)
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
+
+#     def f(B, x):
+#         a, b = B
+#         return a + b * x
+
+#     # assume constant std in log(V) and log(I)
+#     data = RealData(log_x, log_y)
+#     model = Model(f)
+
+#     odr = ODR(data, model, beta0=[0.0, 1.0])
+#     out = odr.run()
+
+#     log_a, b = out.beta
+#     a = np.exp(log_a)
+#     return a, b
+
+# from scipy.stats import theilslopes
+
+# def fit_power_law_TheilSen(x, y):
+#     mask = (x>0)&(y>0)
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
+
+#     slope, intercept, _, _ = theilslopes(log_y, log_x)
+#     a = np.exp(intercept)
+#     b = slope
+#     return a, b
 def fit_power_law(x, y):
     """
     Fit y = a * x^b using linear regression in log-log space.
@@ -256,60 +314,55 @@ def fit_power_law_wls(x, y,weight_power=3):
     a = np.exp(log_a)
     return a, b#, results
 
-import numpy as np
-from scipy.optimize import curve_fit
 
-def powerlaw(I, k, n):
-    return k * I**n
-
-def fit_power_law_curvefit(x, y, sigma=None):
-    x = np.asarray(x)
-    y = np.asarray(y)
-
-    # Mask invalid
-    mask = (x > 0) & (y >= 0)
-    x = x[mask]
-    y = y[mask]
-
-    # Initial guesses
-    n0 = 10
-    k0 = y[np.argmax(x)] / x[np.argmax(x)]**n0
-
-    popt, pcov = curve_fit(powerlaw, x, y, p0=[k0, n0], sigma=sigma, absolute_sigma=True)
-
-    k, n = popt
-    return k, n#, pcov
-
-def compute_R2(x, y, a, b):
+def try_fit_power_law(x, y):
     """
-    Compute R² for the power-law fit y = a * x^b.
+    Try fitting power law; return (a, b) or (None, None) on failure.
     
     Parameters:
-        x (array-like): Independent variable (must be > 0).
-        y (array-like): Dependent variable (must be > 0).
-        a (float): Prefactor from the fit.
-        b (float): Exponent
+        x (np.ndarray): Current values.
+        y (np.ndarray): Voltage values.
+    
+    Returns:
+        tuple: (a, b), or (None, None) if fit fails.
     """
-    x = np.asarray(x)
-    y = np.asarray(y)
+    try:
+        # return fit_power_law(x, y)
+        return fit_power_law_wls(x,y)
+        # return fit_power_law_odr(x,y)
+        # return fit_power_law_TheilSen(x,y)
+        # return fit_power_law_curvefit(x,y)
+    except Exception:
+        return None, None
     
-    # Filter out invalid values
-    mask = (x > 1e-9) & (y > 0)
-    if np.count_nonzero(mask) < 2:
-        raise ValueError("Not enough valid data points for log-log fit.")
+# def compute_R2(x, y, a, b):
+#     """
+#     Compute R² for the power-law fit y = a * x^b.
     
-    log_x = np.log(x[mask])
-    log_y = np.log(y[mask])
+#     Parameters:
+#         x (array-like): Independent variable (must be > 0).
+#         y (array-like): Dependent variable (must be > 0).
+#         a (float): Prefactor from the fit.
+#         b (float): Exponent
+#     """
+#     x = np.asarray(x)
+#     y = np.asarray(y)
+    
+#     # Filter out invalid values
+#     mask = (x > 1e-9) & (y > 0)
+#     if np.count_nonzero(mask) < 2:
+#         raise ValueError("Not enough valid data points for log-log fit.")
+    
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
 
-    # Compute R² in log-log space
-    y_pred = np.log(a) + b * log_x
-    ss_res = np.sum((log_y - y_pred) ** 2)
-    ss_tot = np.sum((log_y - np.mean(log_y)) ** 2)
-    r2 = 1 - ss_res / ss_tot
+#     # Compute R² in log-log space
+#     y_pred = np.log(a) + b * log_x
+#     ss_res = np.sum((log_y - y_pred) ** 2)
+#     ss_tot = np.sum((log_y - np.mean(log_y)) ** 2)
+#     r2 = 1 - ss_res / ss_tot
 
-    return r2
-
-import numpy as np
+#     return r2
 
 def compute_R2_weighted(x, y, a, b, weight_power=10):
     """
@@ -349,60 +402,3 @@ def compute_R2_weighted(x, y, a, b, weight_power=10):
 
     r2_weighted = 1 - ss_res / ss_tot
     return r2_weighted
-
-
-import numpy as np
-from scipy.odr import ODR, Model, RealData
-
-def fit_power_law_odr(x, y):
-    mask = (x>0) & (y>0)
-    log_x = np.log(x[mask])
-    log_y = np.log(y[mask])
-
-    def f(B, x):
-        a, b = B
-        return a + b * x
-
-    # assume constant std in log(V) and log(I)
-    data = RealData(log_x, log_y)
-    model = Model(f)
-
-    odr = ODR(data, model, beta0=[0.0, 1.0])
-    out = odr.run()
-
-    log_a, b = out.beta
-    a = np.exp(log_a)
-    return a, b
-
-from scipy.stats import theilslopes
-
-def fit_power_law_TheilSen(x, y):
-    mask = (x>0)&(y>0)
-    log_x = np.log(x[mask])
-    log_y = np.log(y[mask])
-
-    slope, intercept, _, _ = theilslopes(log_y, log_x)
-    a = np.exp(intercept)
-    b = slope
-    return a, b
-
-def try_fit_power_law(x, y):
-    """
-    Try fitting power law; return (a, b) or (None, None) on failure.
-    
-    Parameters:
-        x (np.ndarray): Current values.
-        y (np.ndarray): Voltage values.
-    
-    Returns:
-        tuple: (a, b), or (None, None) if fit fails.
-    """
-    try:
-        # return fit_power_law(x, y)
-        return fit_power_law_wls(x,y)
-        # return fit_power_law_odr(x,y)
-        # return fit_power_law_TheilSen(x,y)
-        # return fit_power_law_curvefit(x,y)
-    except Exception:
-        return None, None
-    
