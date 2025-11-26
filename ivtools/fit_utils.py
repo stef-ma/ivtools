@@ -234,22 +234,18 @@ def fit_power_law(x, y):
 
 import statsmodels.api as sm
 
-def fit_power_law_wls(x, y, noise_level):
-    mask = (x > 0) & (y > noise_level)
+def fit_power_law_wls(x, y,weight_power=3):
+    mask = (x > 0) & (y > 0)
     log_x = np.log(x[mask])
     log_y = np.log(y[mask])
 
     # Filter out invalid values
-    # mask = (x > 1e-9) & (y > 0)
-    # if np.count_nonzero(mask) < 2:
-    #     raise ValueError("Not enough valid data points for log-log fit.")
+    if np.count_nonzero(mask) < 2:
+        raise ValueError("Not enough valid data points for log-log fit.")
     
-    # log_x = np.log(x[mask])
-    # log_y = np.log(y[mask])
-    
-    # Weights: proportional to actual voltage
+    # Weights: proportional to actual current
     # (low voltages have larger fractional noise)
-    w = y[mask]  # or 1 / y, depending on noise model
+    w = (x[mask]**weight_power) 
 
     X = sm.add_constant(log_x)
     model = sm.WLS(log_y, X, weights=w)
@@ -313,6 +309,82 @@ def compute_R2(x, y, a, b):
 
     return r2
 
+import numpy as np
+
+def compute_R2_weighted(x, y, a, b, weight_power=10):
+    """
+    Compute weighted R² for the power-law fit y = a * x^b.
+
+    Parameters:
+        x (array-like): Independent variable (must be > 0).
+        y (array-like): Dependent variable (must be > 0).
+        a (float): Prefactor from the fit.
+        b (float): Exponent.
+        weight_power (float): Power for weighting: weights = x**weight_power
+
+    Returns:
+        float: weighted R² in log-log space
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+    
+    # Filter out invalid values
+    mask = (x > 1e-9) & (y > 0)
+    if np.count_nonzero(mask) < 2:
+        raise ValueError("Not enough valid data points for log-log fit.")
+    
+    log_x = np.log(x[mask])
+    log_y = np.log(y[mask])
+
+    # Weights proportional to x**weight_power
+    w = log_x**0  # fallback
+    w = x[mask]**weight_power
+
+    # Predicted log-values
+    y_pred = np.log(a) + b * log_x
+
+    # Weighted sums of squares
+    ss_res = np.sum(w * (log_y - y_pred)**2)
+    ss_tot = np.sum(w * (log_y - np.sum(w*log_y)/np.sum(w))**2)
+
+    r2_weighted = 1 - ss_res / ss_tot
+    return r2_weighted
+
+
+import numpy as np
+from scipy.odr import ODR, Model, RealData
+
+def fit_power_law_odr(x, y):
+    mask = (x>0) & (y>0)
+    log_x = np.log(x[mask])
+    log_y = np.log(y[mask])
+
+    def f(B, x):
+        a, b = B
+        return a + b * x
+
+    # assume constant std in log(V) and log(I)
+    data = RealData(log_x, log_y)
+    model = Model(f)
+
+    odr = ODR(data, model, beta0=[0.0, 1.0])
+    out = odr.run()
+
+    log_a, b = out.beta
+    a = np.exp(log_a)
+    return a, b
+
+from scipy.stats import theilslopes
+
+def fit_power_law_TheilSen(x, y):
+    mask = (x>0)&(y>0)
+    log_x = np.log(x[mask])
+    log_y = np.log(y[mask])
+
+    slope, intercept, _, _ = theilslopes(log_y, log_x)
+    a = np.exp(intercept)
+    b = slope
+    return a, b
 
 def try_fit_power_law(x, y):
     """
@@ -326,8 +398,10 @@ def try_fit_power_law(x, y):
         tuple: (a, b), or (None, None) if fit fails.
     """
     try:
-        return fit_power_law(x, y)
-        # return fit_power_law_wls(x,y,10e-6)
+        # return fit_power_law(x, y)
+        return fit_power_law_wls(x,y)
+        # return fit_power_law_odr(x,y)
+        # return fit_power_law_TheilSen(x,y)
         # return fit_power_law_curvefit(x,y)
     except Exception:
         return None, None

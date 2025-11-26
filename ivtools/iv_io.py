@@ -59,8 +59,8 @@ class IV_File:
             self.V = self.V/gain_V
             
             if ppms_field is None: # For files with field channel
-                self.B, _, _, _=self._load_channel_data('Field') #TODO: Should be Field_fixed?
-                # self.B, _, _, _=self._load_channel_data('Field_fixed')
+                # self.B, _, _, _=self._load_channel_data('Field') #TODO: Should be Field_fixed?
+                self.B, _, _, _=self._load_channel_data('Field_fixed')
             elif isinstance(ppms_field, float) or isinstance(ppms_field,int): # For files without field channel but with a constant field value
                 self.B = np.round(np.ones(len(self.I))*ppms_field,2)
             else:
@@ -126,7 +126,7 @@ class IV_File:
         Extracts and converts the numerical values. The key "I-V parameters" is its own dictionary.
         '''
         configuration_dict=dict()
-        if channel.name != 'Field':
+        if channel.name != 'Field' and channel.name!='Field_fixed':
             config = channel.properties['Configuration']
             parsed_config = config.splitlines()
             for i,line in enumerate(parsed_config[1:]):
@@ -284,7 +284,7 @@ def save_fitdata_for_Origin(fit_df,fname,base_path,sample,orientation,magnet,tfi
     else:
         fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx','fnames']]
 
-        fit_df.to_csv(fit_path, header=False, mode='a', sep=',', index=False)
+    fit_df.to_csv(fit_path, header=False, mode='a', sep=',', index=False)
 
-        if verbose:
-            print(f'Saved fit results to: {fit_path}')
+    if verbose:
+        print(f'Saved fit results to: {fit_path}')

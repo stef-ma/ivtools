@@ -45,7 +45,8 @@ def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
     for start in range(0,len(y)//3):
         if y[start] >= voltage_cutoff and start !=0:
             continue
-        for end in range(1,len(y)):
+        # for end in range(1,len(y)):
+        for end in [len(y)-1]:
             if end - start < 3:
                 continue
             else:
@@ -279,7 +280,8 @@ def fit_IV_for_Ic(
                         y_fit = y[start:end]
 
                         k, b = fit_utils.try_fit_power_law(x_fit, y_fit)
-                        r2 = fit_utils.compute_R2(x, y, k, b) if k is not None and b is not None else -np.inf
+                        # r2 = fit_utils.compute_R2(x, y, k, b) if k is not None and b is not None else -np.inf
+                        r2 = fit_utils.compute_R2_weighted(x, y, k, b) if k is not None and b is not None else -np.inf
                         if k is not None and r2 > best_r2 and b > 0 and r2>lin_r2_full:
                             # FINDME 2
                             if r2>power_law_criterion: # use 99 with noise supression
@@ -288,15 +290,15 @@ def fit_IV_for_Ic(
                                 best_b = b
                                 best_r2 = r2
                                 best_Ic = (voltage_cutoff / k) ** (1 / b)
-                                # best_start = start
-                                # best_end = end
+                                test_start = start
+                                test_end = end
                                 best_start = orig_indices[start] if orig_indices[start]!=-1 else 0
                                 best_end = orig_indices[end]
             # print (f'Best power law fit found for segment {i} in file {segment["File"].unique()[0]}: R² = {best_r2}.')
         fit_successful = best_k is not None and best_b is not None
         fit_successes.append(fit_successful)
         if fit_successful:
-            # print(f'Found succesful fit with r2 for power law: {best_r2} against full linear: {lin_r2_full}')
+            print(f'=====+++++=====++++======\n\n\nFound succesful fit. Slices in y:\n{y}\n are {test_start,test_end} corresponding to {y[test_start]} and {y[test_end]}.')
             ks.append(best_k)
             bs.append(best_b)
             r2s.append(best_r2)
@@ -347,6 +349,10 @@ def fit_IV_for_Ic(
         segment['Current [A]'] = len_adjusted_x
         segment['Voltage [V]'] = len_adjusted_y
         processed_segments.append(segment)
+        if fit_successful:
+            print(f'Slices in processed segment:\n{segment["Voltage [V]"]}\n are {best_start,best_end} corresponding to {segment["Voltage [V]"].iloc[best_start]} and {segment["Voltage [V]"].iloc[best_end]}.')
+
+
     
     # processed_segments
     # print('Type of segments returned:', type(segments))
