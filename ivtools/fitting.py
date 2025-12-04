@@ -105,7 +105,7 @@ def masking(x,y,noise_level):
     # monotonic_mask = np.ones(len(y),dtype=bool)
 
     # Update global mask:
-    keep_mask = keep_mask & monotonic_mask
+    # keep_mask = keep_mask & monotonic_mask
     application_mask = application_mask & monotonic_mask
 
     # # Apply local mask:
@@ -119,14 +119,14 @@ def masking(x,y,noise_level):
         # # print(y)
         # y = np.where(np.abs(y) < noise_level, None, y)
         zero_mask = y >= 0
-        keep_mask = keep_mask & zero_mask
+        # keep_mask = keep_mask & zero_mask
         application_mask = application_mask & zero_mask
 
         # x[~zero_mask] = 0 
         # y[~zero_mask] = 0 
 
         noise_mask = np.abs(y) >= noise_level
-        keep_mask = keep_mask & noise_mask
+        # keep_mask = keep_mask & noise_mask
         application_mask = application_mask & noise_mask
 
         # x[~noise_mask] = 0 

@@ -12,7 +12,7 @@ import numpy as np
 import nptdms
 from scipy.interpolate import interp1d
 import os
-
+import warnings
 
 # import nptdms
 # from pathlib import Path
@@ -59,8 +59,11 @@ class IV_File:
             self.V = self.V/gain_V
             
             if ppms_field is None: # For files with field channel
-                # self.B, _, _, _=self._load_channel_data('Field') #TODO: Should be Field_fixed?
-                self.B, _, _, _=self._load_channel_data('Field_fixed')
+                try:
+                    self.B, _, _, _=self._load_channel_data('Field_fixed')
+                except:
+                    print(f'No Field_fixed found in {filepath}, using Field')
+                    self.B, _, _, _=self._load_channel_data('Field') #TODO: Should be Field_fixed?
             elif isinstance(ppms_field, float) or isinstance(ppms_field,int): # For files without field channel but with a constant field value
                 self.B = np.round(np.ones(len(self.I))*ppms_field,2)
             else:
@@ -209,86 +212,6 @@ class IV_File:
         return lows, highs
 
 
-def save_ivdata_for_Origin(raw_df,fname,base_path,sample,orientation,magnet,tfield,temperature,fnames=False,verbose=False):
-
-    output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-
-    raw_path = base_path / f"{output_base}_OriginReadable_raw.csv"
-
-
-
-    #Origin Reformatting
-    with open(raw_path, 'w') as f:
-        header = f'{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}'
-        f.write(f'# {header}\n')
-        f.write(f'I,V,Uncorrected V\-(avg),Processed Voltage,\g(m)\-(0)H,dH/dt,Pulse idx,t\n' if not fnames else f'I,V,Uncorrected V\-(avg),Processed Voltage,\g(m)\-(0)H,dH/dt,Pulse idx,t,File\n')
-        f.write(f'A,V,V,V,T,T/s, ,s, \n' if not fnames else f'A,V,V,V,T,T/s, ,s, , \n')
-        f.write(f'{header},{header},{header},{header},{header},{header},{header},{header}\n' if not fnames else f'{header},{header},{header},{header},{header},{header},{header},{header},{header}\n')
-
-    
-    raw_df['Current_A'] = raw_df['Current [A]']
-    raw_df['Voltage_V'] = raw_df['Voltage [V]']
-    raw_df['Vavg_V'] = raw_df['Vavg [V]']
-    raw_df['Processed_Voltage_V'] = raw_df['Processed Voltage [V]'] if 'Processed Voltage [V]' in raw_df.columns else np.nan 
-    raw_df['Field_T'] = raw_df['Field [T]']
-    raw_df['dBdt'] = raw_df['dBdt [T/s]']
-    raw_df['pdx'] = raw_df['IV_Index']
-    raw_df['time_s'] = raw_df['Time [s]']
-    raw_df['fnames'] = raw_df['File']
-
-
-    if not fnames:
-        raw_df = raw_df[['Current_A','Voltage_V','Vavg_V', 'Processed_Voltage_V','Field_T','dBdt','pdx','time_s']]
-    else:
-        raw_df = raw_df[['Current_A','Voltage_V','Vavg_V', 'Processed_Voltage_V','Field_T','dBdt','pdx','time_s','fnames']]
-    
-
-    raw_df.to_csv(raw_path, mode='a', sep=',', header=False, index=False)
-    if verbose:
-        print(f'Saved fit results to: {raw_path}')
-
-def save_fitdata_for_Origin(fit_df,fname,base_path,sample,orientation,magnet,tfield,temperature,fnames=False,verbose=False,cross_section=None,width=None):
-        
-    output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-
-    fit_path = base_path/ f"{output_base}_OriginReadable_fit.csv"
-
-    #Origin Reformatting
-    with open(fit_path, 'w') as f:
-        header = f'{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}'
-        f.write(f'# {header}\n')
-        f.write(f'\g(m)\-(0)H,I\-(c),I\-(c) (dH/dt>0),I\-(c) (dH/dt<=0),I\-(cpw),J\-(c),k,n,n (dH/dt>0),n (dH/dt<=0),Pulse idx,Fit start idx,Fit end idx\n' if not fnames else f'\g(m)\-(0)H,I\-(c),I\-(c) (dH/dt>0),I\-(c) (dH/dt<=0),I\-(cpw),J\-(c),k,n,n (dH/dt>0),n (dH/dt<=0),Pulse idx,Fit start idx,Fit end idx,File\n')
-        f.write(f'T,A,A,A,A/cm-w,MA/cm\+(2), , , , , \n' if not fnames else f'T,A,A,A,A/cm-w,MA/cm\+(2), , , , , , \n')
-        f.write(f'{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header}\n' if not fnames else f'{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header}\n')
-    
-
-
-    fit_df['Field_T'] = fit_df['Avg Field [T]']
-    fit_df['I_c_A'] = fit_df['I_c']
-    fit_df['I_c_A_pos_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']>0]['I_c']
-    fit_df['I_c_A_neg_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']<=0]['I_c']
-    fit_df['I_cpw_Acmw'] = fit_df['I_c']/width if width else np.nan
-    fit_df['J_c_MAcm2'] = fit_df['I_c']/cross_section/1e6 if cross_section else np.nan
-    fit_df['n'] = fit_df['n']
-    fit_df['n_pos_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']>0]['n']
-    fit_df['n_neg_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']<=0]['n']
-    fit_df['k'] = fit_df['k']
-    fit_df['pdx'] = fit_df['IV_Index']
-    fit_df['fit_start_idx'] = fit_df['fit_start_index']
-    fit_df['fit_end_idx'] = fit_df['fit_end_index']
-    fit_df['fnames'] = fit_df['File']
-
-
-    if not fnames:
-        fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx']]
-    else:
-        fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx','fnames']]
-
-    fit_df.to_csv(fit_path, header=False, mode='a', sep=',', index=False)
-
-    if verbose:
-        print(f'Saved fit results to: {fit_path}')
-
 
 def extract_numeric_temperature(temp):
     """
@@ -307,3 +230,364 @@ def extract_numeric_temperature(temp):
         if match:
             return float(match.group())
     return None
+
+# def save_ivdata_for_Origin(raw_df,fname,base_path,sample,orientation,magnet,tfield,temperature,fnames=False,verbose=False):
+
+#     output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
+
+#     raw_path = base_path / f"{output_base}_OriginReadable_raw.csv"
+
+
+
+#     #Origin Reformatting
+#     with open(raw_path, 'w') as f:
+#         header = f'{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}'
+#         f.write(f'# {header}\n')
+#         f.write(f'I,V,Uncorrected V\-(avg),Processed Voltage,\g(m)\-(0)H,dH/dt,Pulse idx,t\n' if not fnames else f'I,V,Uncorrected V\-(avg),Processed Voltage,\g(m)\-(0)H,dH/dt,Pulse idx,t,File\n')
+#         f.write(f'A,V,V,V,T,T/s, ,s, \n' if not fnames else f'A,V,V,V,T,T/s, ,s, , \n')
+#         f.write(f'{header},{header},{header},{header},{header},{header},{header},{header}\n' if not fnames else f'{header},{header},{header},{header},{header},{header},{header},{header},{header}\n')
+
+    
+#     raw_df['Current_A'] = raw_df['Current [A]']
+#     raw_df['Voltage_V'] = raw_df['Voltage [V]']
+#     raw_df['Vavg_V'] = raw_df['Vavg [V]']
+#     raw_df['Processed_Voltage_V'] = raw_df['Processed Voltage [V]'] if 'Processed Voltage [V]' in raw_df.columns else np.nan 
+#     raw_df['Field_T'] = raw_df['Field [T]']
+#     raw_df['dBdt'] = raw_df['dBdt [T/s]']
+#     raw_df['pdx'] = raw_df['IV_Index']
+#     raw_df['time_s'] = raw_df['Time [s]']
+#     raw_df['fnames'] = raw_df['File']
+
+
+#     if not fnames:
+#         raw_df = raw_df[['Current_A','Voltage_V','Vavg_V', 'Processed_Voltage_V','Field_T','dBdt','pdx','time_s']]
+#     else:
+#         raw_df = raw_df[['Current_A','Voltage_V','Vavg_V', 'Processed_Voltage_V','Field_T','dBdt','pdx','time_s','fnames']]
+    
+
+#     raw_df.to_csv(raw_path, mode='a', sep=',', header=False, index=False)
+#     if verbose:
+#         print(f'Saved fit results to: {raw_path}')
+
+# def save_fitdata_for_Origin(fit_df,fname,base_path,sample,orientation,magnet,tfield,temperature,fnames=False,verbose=False,cross_section=None,width=None):
+        
+#     output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
+
+#     fit_path = base_path/ f"{output_base}_OriginReadable_fit.csv"
+
+#     #Origin Reformatting
+#     with open(fit_path, 'w') as f:
+#         header = f'{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}'
+#         f.write(f'# {header}\n')
+#         f.write(f'\g(m)\-(0)H,I\-(c),I\-(c) (dH/dt>0),I\-(c) (dH/dt<=0),I\-(cpw),J\-(c),k,n,n (dH/dt>0),n (dH/dt<=0),Pulse idx,Fit start idx,Fit end idx\n' if not fnames else f'\g(m)\-(0)H,I\-(c),I\-(c) (dH/dt>0),I\-(c) (dH/dt<=0),I\-(cpw),J\-(c),k,n,n (dH/dt>0),n (dH/dt<=0),Pulse idx,Fit start idx,Fit end idx,File\n')
+#         f.write(f'T,A,A,A,A/cm-w,MA/cm\+(2), , , , , \n' if not fnames else f'T,A,A,A,A/cm-w,MA/cm\+(2), , , , , , \n')
+#         f.write(f'{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header}\n' if not fnames else f'{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header}\n')
+    
+
+
+#     fit_df['Field_T'] = fit_df['Avg Field [T]']
+#     fit_df['I_c_A'] = fit_df['I_c']
+#     fit_df['I_c_A_pos_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']>0]['I_c']
+#     fit_df['I_c_A_neg_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']<=0]['I_c']
+#     fit_df['I_cpw_Acmw'] = fit_df['I_c']/width if width else np.nan
+#     fit_df['J_c_MAcm2'] = fit_df['I_c']/cross_section/1e6 if cross_section else np.nan
+#     fit_df['n'] = fit_df['n']
+#     fit_df['n_pos_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']>0]['n']
+#     fit_df['n_neg_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']<=0]['n']
+#     fit_df['k'] = fit_df['k']
+#     fit_df['pdx'] = fit_df['IV_Index']
+#     fit_df['fit_start_idx'] = fit_df['fit_start_index']
+#     fit_df['fit_end_idx'] = fit_df['fit_end_index']
+#     fit_df['fnames'] = fit_df['File']
+
+
+#     if not fnames:
+#         fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx']]
+#     else:
+#         fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx','fnames']]
+
+#     fit_df.to_csv(fit_path, header=False, mode='a', sep=',', index=False)
+
+#     if verbose:
+#         print(f'Saved fit results to: {fit_path}')
+
+
+
+# -----------------------
+# Column metadata
+# -----------------------
+COLUMN_META_RAW = {
+    "Current_A":              ("I", "A"),
+    "Voltage_V":              ("V", "V"),
+    "Vavg_V":                 ("Uncorrected V\-(avg)", "V"),
+    "Processed_Voltage_V":    ("Processed Voltage", "V"),
+    "Field_T":                ("\g(m)-(0)H", "T"),
+    "dBdt":                   ("dH/dt", "T/s"),
+    "pdx":                    ("IV idx", ""),
+    "time_s":                 ("t", "s"),
+    "fnames":                 ("File", ""),
+}
+
+COLUMN_META_FIT = {
+    "Field_T":                ("\g(m)\-(0)H", "T"),
+    "I_c_A":                  ("I\-(c)", "A"),
+    "I_c_A_pos_dBdt":         ("I\-(c) (dH/dt>0)", "A"),
+    "I_c_A_neg_dBdt":         ("I\-(c) (dH/dt<=0)", "A"),
+    "I_cpw_Acmw":             ("I\-(cpw)", "A/cm-w"),
+    "J_c_MAcm2":              ("J\-(c)", "MA/cm^2"),
+    "k":                      ("k", ""),
+    "n":                      ("n", ""),
+    "n_pos_dBdt":             ("n (dH/dt>0)", ""),
+    "n_neg_dBdt":             ("n (dH/dt<=0)", ""),
+    "pdx":                    ("IV idx", ""),
+    "fit_start_idx":          ("Fit start idx", ""),
+    "fit_end_idx":            ("Fit end idx", ""),
+    "fnames":                 ("File", ""),
+}
+
+
+FIT_PRESETS = {
+    "full": [
+        "Field_T",
+        "I_c_A",
+        "I_c_A_pos_dBdt",
+        "I_c_A_neg_dBdt",
+        "I_cpw_Acmw",
+        "J_c_MAcm2",
+        "k",
+        "n",
+        "n_pos_dBdt",
+        "n_neg_dBdt",
+        "pdx",
+        "fit_start_idx",
+        "fit_end_idx",
+        "fnames",
+    ],
+    "minimal": [
+        "Field_T",
+        "I_c_A",
+        "pdx",
+        "fnames",
+    ],
+    "minimal_expanded": [
+        "Field_T",
+        "I_c_A",
+        "n",
+        "k",
+        "pdx",
+        "fnames",
+    ]
+}
+
+IV_PRESETS = {
+    "full": [
+        "Current_A",
+        "Voltage_V",
+        "Vavg_V",
+        "Processed_Voltage_V",
+        "Field_T",
+        "dBdt",
+        "pdx",
+        "time_s",
+        "fnames",
+    ],
+    "minimal": [
+        "Current_A",
+        "Voltage_V",
+        "Processed_Voltage_V",
+        "Field_T",
+        "dBdt",
+        "pdx",
+        "fnames",
+    ],
+}
+
+
+# -----------------------
+# Helper: build headers from metadata dict (injected)
+# -----------------------
+def build_origin_headers(column_order, column_meta, header_comment):
+    """
+    Returns three strings: label_row, unit_row, meta_row
+    column_order: list of internal column names
+    column_meta: mapping internal -> (label, unit)
+    header_comment: string to repeat in meta row
+    """
+    labels = []
+    units = []
+    metas = []
+    for c in column_order:
+        meta = column_meta.get(c)
+        if meta is None:
+            # fallback: use the column name, empty unit
+            labels.append(c)
+            units.append("")
+        else:
+            labels.append(meta[0])
+            units.append(meta[1])
+        metas.append(header_comment)
+    label_row = ",".join(labels)
+    unit_row = ",".join(units)
+    meta_row = ",".join(metas)
+    return label_row, unit_row, meta_row
+
+# -----------------------
+# Raw save function (user-selectable columns)
+# -----------------------
+def save_ivdata_for_Origin(
+    raw_df,
+    fname,
+    base_path,
+    sample,
+    orientation,
+    magnet,
+    tfield,
+    temperature,
+    preset=None,
+    columns=IV_PRESETS["full"],
+    column_meta=None,
+    verbose=False,
+):
+    """
+    Save raw IV data in an Origin-readable CSV with flexible column selection.
+
+    - columns: list of internal column names to write (defaults provided)
+    - column_meta: dict mapping internal names -> (label, unit). Defaults to COLUMN_META_RAW.
+    """
+    base_path = Path(base_path)
+    if column_meta is None:
+        column_meta = COLUMN_META_RAW
+
+    if preset is not None:
+        columns = IV_PRESETS[preset]
+    # default columns
+    if columns is None:
+        columns = [
+            "Current_A","Voltage_V","Vavg_V","Processed_Voltage_V",
+            "Field_T","dBdt","pdx","time_s"
+        ]
+    
+
+    # Normalize / create internal columns from available raw_df fields, safe-get
+    raw_df = raw_df.copy()
+    raw_df["Current_A"]           = raw_df.get("Current [A]", raw_df.get("Current_A", np.nan))
+    raw_df["Voltage_V"]           = raw_df.get("Voltage [V]", raw_df.get("Voltage_V", np.nan))
+    raw_df["Vavg_V"]              = raw_df.get("Vavg [V]", raw_df.get("Vavg_V", np.nan))
+    raw_df["Processed_Voltage_V"] = raw_df.get("Processed Voltage [V]", raw_df.get("Processed_Voltage_V", np.nan))
+    raw_df["Field_T"]             = raw_df.get("Field [T]", raw_df.get("Field_T", np.nan))
+    raw_df["dBdt"]                = raw_df.get("dBdt [T/s]", raw_df.get("dBdt", np.nan))
+    raw_df["pdx"]                 = raw_df.get("IV_Index", raw_df.get("pdx", np.nan))
+    raw_df["time_s"]              = raw_df.get("Time [s]", raw_df.get("time_s", np.nan))
+    raw_df["fnames"]              = raw_df.get("File", raw_df.get("fnames", ""))
+
+    # validate requested columns
+    missing = [c for c in columns if c not in raw_df.columns]
+    if missing:
+        warnings.warn(f"The following requested columns are not present and will be filled with NaN or dropped: {missing}")
+        # Keep them (they may be in column_meta) but ensure we can output something:
+        for c in missing:
+            if c not in raw_df.columns:
+                raw_df[c] = np.nan
+
+    output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
+    raw_path = base_path / f"{output_base}_OriginReadable_ivs.csv"
+    header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
+
+    # Build header rows
+    label_row, unit_row, meta_row = build_origin_headers(columns, column_meta, header_comment)
+
+    # Write file
+    with open(raw_path, "w") as f:
+        f.write(f"# {header_comment}\n")
+        f.write(label_row + "\n")
+        f.write(unit_row + "\n")
+        f.write(meta_row + "\n")
+
+    # Save data rows (ensure columns order)
+    raw_df.to_csv(raw_path, mode="a", header=False, index=False, columns=columns)
+
+    if verbose:
+        print(f"Saved raw Origin-readable data to: {raw_path}")
+
+# -----------------------
+# Fit save function (user-selectable columns)
+# -----------------------
+def save_fitdata_for_Origin(
+    fit_df,
+    fname,
+    base_path,
+    sample,
+    orientation,
+    magnet,
+    tfield,
+    temperature,
+    preset=None,
+    columns=FIT_PRESETS["full"],
+    column_meta=None,
+    cross_section=None,
+    width=None,
+    verbose=False,
+):
+    """
+    Save fit results with flexible column selection.
+    - columns: list of internal column names to write
+    - column_meta: mapping for labels/units (defaults to COLUMN_META_FIT)
+    """
+    base_path = Path(base_path)
+    if column_meta is None:
+        column_meta = COLUMN_META_FIT
+
+    if preset is not None:
+        columns = FIT_PRESETS[preset]
+
+    # default columns
+    if columns is None:
+        columns = [
+            "Field_T","I_c_A","I_c_A_pos_dBdt","I_c_A_neg_dBdt",
+            "I_cpw_Acmw","J_c_MAcm2","k","n","n_pos_dBdt","n_neg_dBdt",
+            "pdx","fit_start_idx","fit_end_idx"
+        ]
+
+
+    fit_df = fit_df.copy()
+    # compute/normalize the internal names used by downstream CSV
+    fit_df["Field_T"] = fit_df.get("Avg Field [T]", fit_df.get("Field_T", np.nan))
+    fit_df["I_c_A"] = fit_df.get("I_c", fit_df.get("I_c_A", np.nan))
+    # Pos/neg splits: create series aligned with full df by masking
+    fit_df["I_c_A_pos_dBdt"] = np.where(fit_df.get("Avg dB/dt [T/s]", 0) > 0, fit_df.get("I_c", np.nan), np.nan)
+    fit_df["I_c_A_neg_dBdt"] = np.where(fit_df.get("Avg dB/dt [T/s]", 0) <= 0, fit_df.get("I_c", np.nan), np.nan)
+    fit_df["I_cpw_Acmw"] = (fit_df.get("I_c", np.nan) / width) if width else np.nan
+    fit_df["J_c_MAcm2"] = (fit_df.get("I_c", np.nan) / cross_section / 1e6) if cross_section else np.nan
+    fit_df["n"] = fit_df.get("n", np.nan)
+    fit_df["n_pos_dBdt"] = np.where(fit_df.get("Avg dB/dt [T/s]", 0) > 0, fit_df.get("n", np.nan), np.nan)
+    fit_df["n_neg_dBdt"] = np.where(fit_df.get("Avg dB/dt [T/s]", 0) <= 0, fit_df.get("n", np.nan), np.nan)
+    fit_df["k"] = fit_df.get("k", np.nan)
+    fit_df["pdx"] = fit_df.get("IV_Index", fit_df.get("pdx", np.nan))
+    fit_df["fit_start_idx"] = fit_df.get("fit_start_index", fit_df.get("fit_start_idx", np.nan))
+    fit_df["fit_end_idx"] = fit_df.get("fit_end_index", fit_df.get("fit_end_idx", np.nan))
+    fit_df["fnames"] = fit_df.get("File", fit_df.get("fnames", ""))
+
+    # validate columns
+    missing = [c for c in columns if c not in fit_df.columns]
+    if missing:
+        warnings.warn(f"The following requested fit columns are not present and will be filled with NaN or dropped: {missing}")
+        for c in missing:
+            if c not in fit_df.columns:
+                fit_df[c] = np.nan
+
+    output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
+    fit_path = base_path / f"{output_base}_OriginReadable_fit.csv"
+    header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
+
+    label_row, unit_row, meta_row = build_origin_headers(columns, column_meta, header_comment)
+
+    with open(fit_path, "w") as f:
+        f.write(f"# {header_comment}\n")
+        f.write(label_row + "\n")
+        f.write(unit_row + "\n")
+        f.write(meta_row + "\n")
+
+    fit_df.to_csv(fit_path, mode="a", header=False, index=False, columns=columns)
+
+    if verbose:
+        print(f"Saved fit Origin-readable data to: {fit_path}")
