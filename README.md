@@ -26,9 +26,14 @@ dependencies:
 pip install git+https://github.com/stef-ma/ivtools
 
 # Use
+
 #import module
+
 import ivtools as ivt
+
+
 #load tdms file as IV_File object
+
 ivf = ivt.IV_File(
     filepath, 
     resistor, 
@@ -39,7 +44,10 @@ ivf = ivt.IV_File(
     current_channel=ichan,
     ppms_field=tfield if magnet=='PPMS' else None
     )
+
+
 #process IV_File, outputs the processed IVs, the fits, and the ivf itself
+
 ivs, fits, ivf = ivt.process_ivf(
                                 ivf,
                                 filepath,
@@ -56,7 +64,10 @@ ivs, fits, ivf = ivt.process_ivf(
                                 magnet = magnet,
                                 verbose = verbose
                                 )
+
+                                
 #save data
+
 ivt.save_ivdata(
                 ivs,
                 fname,
