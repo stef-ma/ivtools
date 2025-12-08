@@ -319,6 +319,33 @@ def extract_numeric_temperature(temp):
 COLUMN_META_RAW = {
     "Current_A":              ("I", "A"),
     "Voltage_V":              ("V", "V"),
+    "Vavg_V":                 ("Uncorrected Vavg", "V"),
+    "Processed_Voltage_V":    ("Processed Voltage", "V"),
+    "Field_T":                ("Field", "T"),
+    "dBdt":                   ("dH/dt", "T/s"),
+    "pdx":                    ("IV idx", ""),
+    "time_s":                 ("t", "s"),
+    "fnames":                 ("File", ""),
+}
+COLUMN_META_FIT = {
+    "Field_T":                ("Field", "T"),
+    "I_c_A":                  ("Ic", "A"),
+    "I_c_A_pos_dBdt":         ("Ic (dH/dt>0)", "A"),
+    "I_c_A_neg_dBdt":         ("Ic (dH/dt<=0)", "A"),
+    "I_cpw_Acmw":             ("Icpw", "A/cm-w"),
+    "J_c_MAcm2":              ("Jc", "MA/cm^2"),
+    "k":                      ("k", ""),
+    "n":                      ("n", ""),
+    "n_pos_dBdt":             ("n (dH/dt>0)", ""),
+    "n_neg_dBdt":             ("n (dH/dt<=0)", ""),
+    "pdx":                    ("IV idx", ""),
+    "fit_start_idx":          ("Fit start idx", ""),
+    "fit_end_idx":            ("Fit end idx", ""),
+    "fnames":                 ("File", ""),
+}
+COLUMN_META_RAW_ORIGIN = {
+    "Current_A":              ("I", "A"),
+    "Voltage_V":              ("V", "V"),
     "Vavg_V":                 ("Uncorrected V\-(avg)", "V"),
     "Processed_Voltage_V":    ("Processed Voltage", "V"),
     "Field_T":                ("\g(m)-(0)H", "T"),
@@ -327,8 +354,7 @@ COLUMN_META_RAW = {
     "time_s":                 ("t", "s"),
     "fnames":                 ("File", ""),
 }
-
-COLUMN_META_FIT = {
+COLUMN_META_FIT_ORIGIN = {
     "Field_T":                ("\g(m)\-(0)H", "T"),
     "I_c_A":                  ("I\-(c)", "A"),
     "I_c_A_pos_dBdt":         ("I\-(c) (dH/dt>0)", "A"),
@@ -392,6 +418,7 @@ IV_PRESETS = {
         "fnames",
     ],
     "minimal": [
+        "time_s",
         "Current_A",
         "Voltage_V",
         "Processed_Voltage_V",
@@ -434,7 +461,7 @@ def build_origin_headers(column_order, column_meta, header_comment):
 # -----------------------
 # Raw save function (user-selectable columns)
 # -----------------------
-def save_ivdata_for_Origin(
+def save_ivdata(
     raw_df,
     fname,
     base_path,
@@ -446,6 +473,7 @@ def save_ivdata_for_Origin(
     preset=None,
     columns=IV_PRESETS["full"],
     column_meta=None,
+    origin = False,
     verbose=False,
 ):
     """
@@ -489,8 +517,11 @@ def save_ivdata_for_Origin(
             if c not in raw_df.columns:
                 raw_df[c] = np.nan
 
-    output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-    raw_path = base_path / f"{output_base}_OriginReadable_ivs.csv"
+    # output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
+    output_base = f"IV_{temperature}K_{tfield}T_{orientation}deg_{fname}"
+    if origin:
+        output_base = output_base + '_OriginReadable'
+    raw_path = base_path / f"{output_base}_ivs.csv"
     header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
     # Build header rows
@@ -501,7 +532,8 @@ def save_ivdata_for_Origin(
         f.write(f"# {header_comment}\n")
         f.write(label_row + "\n")
         f.write(unit_row + "\n")
-        f.write(meta_row + "\n")
+        if origin:
+            f.write(meta_row + "\n")
 
     # Save data rows (ensure columns order)
     raw_df.to_csv(raw_path, mode="a", header=False, index=False, columns=columns)
@@ -512,7 +544,7 @@ def save_ivdata_for_Origin(
 # -----------------------
 # Fit save function (user-selectable columns)
 # -----------------------
-def save_fitdata_for_Origin(
+def save_fitdata(
     fit_df,
     fname,
     base_path,
@@ -524,6 +556,7 @@ def save_fitdata_for_Origin(
     preset=None,
     columns=FIT_PRESETS["full"],
     column_meta=None,
+    origin = False,
     cross_section=None,
     width=None,
     verbose=False,
@@ -575,8 +608,11 @@ def save_fitdata_for_Origin(
             if c not in fit_df.columns:
                 fit_df[c] = np.nan
 
-    output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-    fit_path = base_path / f"{output_base}_OriginReadable_fit.csv"
+    # output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
+    output_base = f"IcH_{temperature}K_{tfield}T_{orientation}deg_{fname}"
+    if origin:
+        output_base = output_base + '_OriginReadable'
+    fit_path = base_path / f"{output_base}.csv"
     header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
     label_row, unit_row, meta_row = build_origin_headers(columns, column_meta, header_comment)
@@ -585,7 +621,8 @@ def save_fitdata_for_Origin(
         f.write(f"# {header_comment}\n")
         f.write(label_row + "\n")
         f.write(unit_row + "\n")
-        f.write(meta_row + "\n")
+        if origin:
+            f.write(meta_row + "\n")
 
     fit_df.to_csv(fit_path, mode="a", header=False, index=False, columns=columns)
 

@@ -357,9 +357,13 @@ def fit_IV_for_Ic(
         # len_adjusted_x = x0[keep_mask]
         # len_adjusted_y = y0[keep_mask]
         # len_adjusted_x, len_adjusted_y = anchor_low_voltage(len_adjusted_x, len_adjusted_y, noise_level) 
-        segment['Current [A]'] = len_adjusted_x
-        segment['Voltage [V]'] = len_adjusted_y
-        processed_segments.append(segment)
+        # segment['Current [A]'] = len_adjusted_x
+        # segment['Voltage [V]'] = len_adjusted_y
+        # processed_segments.append(segment)
+        newseg = segment
+        newseg['Current [A]'] = len_adjusted_x
+        newseg['Voltage [V]'] = len_adjusted_y
+        processed_segments.append(newseg)
         if fit_successful:
             print(f'Slices in processed segment:\n{segment["Voltage [V]"]}\n are {best_start,best_end} corresponding to {segment["Voltage [V]"].iloc[best_start]} and {segment["Voltage [V]"].iloc[best_end]}.')
 
