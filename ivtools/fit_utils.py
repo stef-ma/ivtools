@@ -402,3 +402,142 @@ def compute_R2_weighted(x, y, a, b, weight_power=10):
 
     r2_weighted = 1 - ss_res / ss_tot
     return r2_weighted
+
+
+def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
+    best_lin_r2 = 0
+    best_p = None
+
+    fit_check_y = y[y<voltage_cutoff*.5]
+    fit_check_x = x[y<voltage_cutoff*.5]
+
+    for start in range(0,len(y)//3):
+        if y[start] >= voltage_cutoff and start !=0:
+            continue
+        for end in range(1,len(y)):
+        # for end in [len(y)-1]:
+            if end - start < 2:
+                continue
+            else:
+                x_fit = x[start:end]
+                y_fit = y[start:end]
+                # Step 2. Fit linear and compute R2
+                try:
+                    p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
+                    y_pred = np.polyval(p, fit_check_x)
+                    ss_res = np.sum((fit_check_y - y_pred) ** 2)
+                    ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
+                    lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
+                except:
+                    lin_r2 = 0
+                if lin_r2 > best_lin_r2:
+                    best_lin_r2 = lin_r2
+                    best_p = p
+
+    if best_lin_r2 and best_lin_r2>linear_sub_criterion:
+        # plt.clf()
+        # print('\n\n\n\nSubtracted!\n\n\n\n')
+        # plt.plot(np.linspace(1,len(y),len(y)),y)
+        lin_fit_full_y = np.polyval(best_p, x)
+        y = y - lin_fit_full_y
+        # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
+        # plt.plot(np.linspace(1,len(y),len(y)),y)
+        # plt.gca().axhspan(0,0.01e-6)
+        # plt.gca().axhspan(24.9e-6,25.01e-6)
+        # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
+        # plt.gca().grid()
+        # plt.show()
+    return y
+
+def masking(x,y,noise_level):
+
+    keep_mask = np.ones(len(y), dtype=bool)
+    application_mask = np.ones(len(y), dtype=bool)
+
+
+    # # mask non monotonically increasing points
+    # monotonic_mask = np.concatenate(([True], np.diff(y) >= 0))
+    # y = y[monotonic_mask]
+    # x = x[monotonic_mask]
+
+    monotonic_mask = np.concatenate([[True], np.diff(y) >= 0]) 
+
+    # monotonic_mask = [True]
+    # for idx in range(1, len(y)):
+    #     if y[idx] >= y[idx - 1]:
+    #         monotonic_mask.append(True)
+    #     else:
+    #         monotonic_mask.append(False)
+
+    # y = y[monotonic_mask]
+    # x = x[monotonic_mask]
+    # monotonic_mask = np.ones(len(y),dtype=bool)
+
+    # Update global mask:
+    # keep_mask = keep_mask & monotonic_mask
+    application_mask = application_mask & monotonic_mask
+
+    # # Apply local mask:
+    # x = x[monotonic_mask]
+    # y = y[monotonic_mask]
+
+    # Suppress near-zero noise
+    if noise_level is not None and noise_level > 0:
+        # y = np.where(y < 0, 0.0, y)
+        # # y = np.clip(y, 0, None)
+        # # print(y)
+        # y = np.where(np.abs(y) < noise_level, None, y)
+        zero_mask = y >= 0
+        # keep_mask = keep_mask & zero_mask
+        application_mask = application_mask & zero_mask
+
+        # x[~zero_mask] = 0 
+        # y[~zero_mask] = 0 
+
+        noise_mask = np.abs(y) >= noise_level
+        # keep_mask = keep_mask & noise_mask
+        application_mask = application_mask & noise_mask
+
+        # x[~noise_mask] = 0 
+        # y[~noise_mask] = 0 
+
+    x = x[application_mask]
+    y = y[application_mask] 
+
+    return x,y,keep_mask,application_mask
+
+def anchor_low_voltage(x, y, noise_level):
+    """
+    Add a synthetic low-current / low-voltage point to stabilize power-law fits.
+    """
+    if noise_level is None or noise_level <= 0:
+        return x, y
+
+    # Smallest positive current in the dataset
+    pos_x = x[x > 0]
+    if len(pos_x) == 0:
+        return x, y  # nothing meaningful to anchor
+
+    I_min = np.min(pos_x)
+
+    # Create a synthetic anchor point
+    I_anchor = 0.1 * I_min      # one order of magnitude lower
+    V_anchor = 0      # baseline measurable voltage
+    # V_anchor = 0.001 * noise_level      # baseline measurable voltage
+    
+    # # Append
+    # x_aug = np.append(x, I_anchor)
+    # y_aug = np.append(y, V_anchor)
+
+
+    # # Doubling down?
+    # I_anchor = I_min*0.001
+    # V_anchor = 0
+
+
+    # Append and re-sort
+    x_aug = np.append(x, I_anchor)
+    y_aug = np.append(y, V_anchor)
+    order = np.argsort(x_aug)
+
+    return x_aug[order], y_aug[order]
