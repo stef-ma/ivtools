@@ -36,11 +36,12 @@ def split_by_jump(df, drop_factor=0.5):
 
     split_idx = np.unique(split_idx)
     segments = np.split(df.reset_index(drop=True), split_idx)
-    return segments#, split_idx
+    # return segments#, split_idx
+    return [seg.copy(deep=True) for seg in segments] #safer
 
 
 
-def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.9):
+def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.5):
     """
     Determine the region of interest (ROI) around a specified index in the data.
 
@@ -364,7 +365,7 @@ def try_fit_power_law(x, y):
 
 #     return r2
 
-def compute_R2_weighted(x, y, a, b, weight_power=10):
+def compute_R2_weighted(x, y, a, b, weight_power=3): #Used 10 as the weight_power for UKAEA
     """
     Compute weighted R² for the power-law fit y = a * x^b.
 

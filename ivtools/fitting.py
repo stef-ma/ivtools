@@ -194,7 +194,7 @@ def fit_IV_for_Ic(
         # segment['Current [A]'] = len_adjusted_x
         # segment['Voltage [V]'] = len_adjusted_y
         # processed_segments.append(segment)
-        newseg = segment
+        newseg = segment.copy()
         newseg['Current [A]'] = len_adjusted_x
         newseg['Voltage [V]'] = len_adjusted_y
         processed_segments.append(newseg)
