@@ -365,52 +365,142 @@ def try_fit_power_law(x, y):
 
 #     return r2
 
-def compute_R2_weighted(x, y, a, b, weight_power=3): #Used 10 as the weight_power for UKAEA
-    """
-    Compute weighted R² for the power-law fit y = a * x^b.
+# def compute_R2_weighted(x, y, a, b, weight_power=15): #Used 10 as the weight_power for UKAEA
+#     """
+#     Compute weighted R² for the power-law fit y = a * x^b.
 
-    Parameters:
-        x (array-like): Independent variable (must be > 0).
-        y (array-like): Dependent variable (must be > 0).
-        a (float): Prefactor from the fit.
-        b (float): Exponent.
-        weight_power (float): Power for weighting: weights = x**weight_power
+#     Parameters:
+#         x (array-like): Independent variable (must be > 0).
+#         y (array-like): Dependent variable (must be > 0).
+#         a (float): Prefactor from the fit.
+#         b (float): Exponent.
+#         weight_power (float): Power for weighting: weights = x**weight_power
 
-    Returns:
-        float: weighted R² in log-log space
+#     Returns:
+#         float: weighted R² in log-log space
+#     """
+#     x = np.asarray(x)
+#     y = np.asarray(y)
+    
+#     # Filter out invalid values
+#     mask = (x > 1e-9) & (y > 0)
+#     if np.count_nonzero(mask) < 2:
+#         raise ValueError("Not enough valid data points for log-log fit.")
+    
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
+
+#     # Weights proportional to x**weight_power
+#     w = log_x**0  # fallback
+#     w = x[mask]**weight_power
+#     # TODO I am starting to think that it would be better to weigh "later" points more than "high current points". Ie for an IV of 5 points 5**3
+#     # is much more different to 4**3 than 160mA**10 compared to 140mA**10.... Food for thought.
+
+#     # Predicted log-values
+#     y_pred = np.log(a) + b * log_x
+
+#     # Weighted sums of squares
+#     ss_res = np.sum(w * (log_y - y_pred)**2)
+#     ss_tot = np.sum(w * (log_y - np.sum(w*log_y)/np.sum(w))**2)
+
+#     r2_weighted = 1 - ss_res / ss_tot
+#     return r2_weighted
+
+def compute_R2_weighted(
+    x, 
+    y, 
+    a, 
+    b, 
+    weight_power=5, 
+    weight_mode="index"      # "x" or "index"
+):
     """
+    Compute weighted R² for the power-law fit y = a * x^b in log-log space.
+
+    Parameters
+    ----------
+    x : array-like
+        Independent variable (must be > 0).
+    y : array-like
+        Dependent variable (must be > 0).
+    a : float
+        Fit prefactor.
+    b : float
+        Fit exponent.
+    weight_power : float
+        Exponent used when constructing weights.
+    weight_mode : str
+        "x"      -> weights = x**weight_power
+        "index"  -> weights = (1..N)**weight_power
+
+    Returns
+    -------
+    float
+        Weighted R² in log-log space.
+    """
+
     x = np.asarray(x)
     y = np.asarray(y)
-    
-    # Filter out invalid values
-    mask = (x > 1e-9) & (y > 0)
+
+    # Filter valid values
+    mask = (x > 1e-12) & (y > 0)
     if np.count_nonzero(mask) < 2:
-        raise ValueError("Not enough valid data points for log-log fit.")
-    
-    log_x = np.log(x[mask])
-    log_y = np.log(y[mask])
+        raise ValueError("Not enough valid data points after filtering.")
 
-    # Weights proportional to x**weight_power
-    w = log_x**0  # fallback
-    w = x[mask]**weight_power
+    xg = x[mask]
+    yg = y[mask]
 
-    # Predicted log-values
+    log_x = np.log(xg)
+    log_y = np.log(yg)
+
+    # ----------------------------------------------------------------------
+    # Weight construction
+    # ----------------------------------------------------------------------
+    if weight_mode == "x":
+        w = xg ** weight_power
+
+    elif weight_mode == "index":
+        # Weight by progression in the *filtered* dataset
+        idx = np.arange(1, len(xg) + 1)
+        w = idx ** weight_power
+
+    else:
+        raise ValueError(
+            f"Invalid weight_mode '{weight_mode}'. Must be 'x' or 'index'."
+        )
+
+    # Prevent division by zero
+    if np.any(w <= 0):
+        raise ValueError("Non-positive weights encountered.")
+
+    # ----------------------------------------------------------------------
+    # Weighted regression quality evaluation
+    # ----------------------------------------------------------------------
     y_pred = np.log(a) + b * log_x
 
-    # Weighted sums of squares
-    ss_res = np.sum(w * (log_y - y_pred)**2)
-    ss_tot = np.sum(w * (log_y - np.sum(w*log_y)/np.sum(w))**2)
+    # Weighted residual and total variance
+    y_mean_w = np.sum(w * log_y) / np.sum(w)
 
-    r2_weighted = 1 - ss_res / ss_tot
-    return r2_weighted
+    ss_res = np.sum(w * (log_y - y_pred)**2)
+    ss_tot = np.sum(w * (log_y - y_mean_w)**2)
+
+    # Guard against pathological degeneracy
+    if ss_tot == 0:
+        return 1.0
+
+    return 1 - ss_res / ss_tot
 
 
 def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
     best_lin_r2 = 0
     best_p = None
 
-    fit_check_y = y[y<voltage_cutoff*.5]
-    fit_check_x = x[y<voltage_cutoff*.5]
+    fit_check_y = y[y<voltage_cutoff]
+    fit_check_x = x[y<voltage_cutoff]
+
+    if len(fit_check_x)>=3: # better behavior for large IVs
+        fit_check_y = y[y<voltage_cutoff*.5]
+        fit_check_x = x[y<voltage_cutoff*.5]
 
     for start in range(0,len(y)//3):
         if y[start] >= voltage_cutoff and start !=0:

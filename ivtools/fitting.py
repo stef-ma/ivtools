@@ -113,11 +113,11 @@ def fit_IV_for_Ic(
                 lin_r2_full = 1 - ss_res_lin[0] / ss_tot_lin
             except:
                 lin_r2_full = -np.inf
-            # if lin_r2_full>.95:
-            #     continue
+            if lin_r2_full>.95:
+                continue
             for start in range(0,len(y)-1):
-                # for end in range(1,len(y)):
-                for end in [len(y)-1]:
+                for end in range(len(y)//2,len(y)):
+                # for end in [len(y)-1]: #USED FOR UKAEA
                     if len(x[start:end]) < min_fit_points or len(x[start:end]) > max_fit_points:
                         continue
                     else:
@@ -194,7 +194,8 @@ def fit_IV_for_Ic(
         # segment['Current [A]'] = len_adjusted_x
         # segment['Voltage [V]'] = len_adjusted_y
         # processed_segments.append(segment)
-        newseg = segment.copy()
+        # newseg = segment.copy()
+        newseg = segment
         newseg['Current [A]'] = len_adjusted_x
         newseg['Voltage [V]'] = len_adjusted_y
         processed_segments.append(newseg)

@@ -427,6 +427,16 @@ IV_PRESETS = {
         "pdx",
         "fnames",
     ],
+    "minimal_expanded": [
+        "time_s",
+        "Current_A",
+        "Voltage_V",
+        "Processed_Voltage_V",
+        "Field_T",
+        "dBdt",
+        "pdx",
+        "fnames",
+    ],
 }
 
 
@@ -484,7 +494,7 @@ def save_ivdata(
     """
     base_path = Path(base_path)
     if column_meta is None:
-        column_meta = COLUMN_META_RAW
+        column_meta = COLUMN_META_RAW if not origin else COLUMN_META_RAW_ORIGIN
 
     if preset is not None:
         columns = IV_PRESETS[preset]
@@ -568,7 +578,7 @@ def save_fitdata(
     """
     base_path = Path(base_path)
     if column_meta is None:
-        column_meta = COLUMN_META_FIT
+        column_meta = COLUMN_META_FIT if not origin else COLUMN_META_FIT_ORIGIN
 
     if preset is not None:
         columns = FIT_PRESETS[preset]
@@ -612,7 +622,7 @@ def save_fitdata(
     output_base = f"IcH_{temperature}K_{tfield}T_{orientation}deg_{fname}"
     if origin:
         output_base = output_base + '_OriginReadable'
-    fit_path = base_path / f"{output_base}.csv"
+    fit_path = base_path / f"{output_base}_fit.csv"
     header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
     label_row, unit_row, meta_row = build_origin_headers(columns, column_meta, header_comment)
