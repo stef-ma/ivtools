@@ -124,7 +124,8 @@ def fit_IV_for_Ic(
                         x_fit = x[start:end]
                         y_fit = y[start:end]
 
-                        k, n = fit_utils.try_fit_power_law(x_fit, y_fit)
+                        # k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit) # If old system, where cutoff is not needed.
+                        k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff)
                         r2 = fit_utils.compute_R2_weighted(x, y, k, n) if k is not None and n is not None else -np.inf
                         if k is not None and r2 > best_r2 and n > 0 and r2>lin_r2_full:
                             # FINDME 2
@@ -133,7 +134,7 @@ def fit_IV_for_Ic(
                                 best_k = k
                                 best_n = n
                                 best_r2 = r2
-                                best_Ic = fit_utils.powerlaw_inverted(voltage_cutoff,k,n)
+                                best_Ic = ic if ic is not None else fit_utils.powerlaw_inverted(voltage_cutoff,k,n)
                                 test_start = start
                                 test_end = end
                                 best_start = orig_indices[start] if orig_indices[start]!=-1 else 0

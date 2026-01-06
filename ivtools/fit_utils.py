@@ -212,30 +212,133 @@ def powerlaw_inverted(vc,k,n):
 
 import statsmodels.api as sm
 
-def fit_power_law_wls(x, y,weight_power=3):
+# def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3): 
+#     """
+#     Find parameters to describe non-linear IV behavior.
+#     Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. 
+#     Fit on y′ = n*x + c, for: 
+#         x = log I
+#         y′ = logV
+#         c = k
+
+#     Parameters
+#     ----------
+#     x : array-like
+#         Independent variable (must be > 0).
+#     y : array-like
+#         Dependent variable (must be > 0).
+#     voltage_criterion : float
+#         Voltage criterion for Ic calulation. Included for compatability with alternative function.
+#     weight_power : float
+#         Exponent used when constructing weights.
+
+#     Returns
+#     -------
+#     k : float
+#         Pre exponent expected downstream
+#     Ic : float
+#         Critical current
+#     n : float
+#         Power-law exponent
+#     """
+#     # log fit on log V = log k + n*log I
+#     mask = (x > 0) & (y > 0)
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
+
+#     # Filter out invalid values
+#     if np.count_nonzero(mask) < 2:
+#         raise ValueError("Not enough valid data points for log-log fit.")
+    
+#     # Weights: proportional to actual current
+#     # (low voltages have larger fractional noise)
+#     w = (x[mask]**weight_power) 
+
+#     X = sm.add_constant(log_x)
+#     model = sm.WLS(log_y, X, weights=w)
+#     results = model.fit()
+
+#     log_a = results.params[0]
+#     n = results.params[1]
+#     k = np.exp(log_a)
+#     ic = None
+#     return k, n, ic#, results
+
+def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode='index'): 
+    """
+    Find parameters to describe non-linear IV behavior.
+    Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. 
+    Fit on y′ = n*x + c, for: 
+        x = log I
+        y′ = logV − logVc 
+        c = −n log Ic
+
+    Parameters
+    ----------
+    x : array-like
+        Independent variable (must be > 0).
+    y : array-like
+        Dependent variable (must be > 0).
+    voltage_criterion : float
+        Voltage criterion for Ic calulation.
+    weight_power : float
+        Exponent used when constructing weights.
+    weight_mode : str
+        "x"      -> weights = x**weight_power
+        "index"  -> weights = (1..N)**weight_power
+
+    Returns
+    -------
+    k : float
+        Pre exponent expected downstream
+    Ic : float
+        Critical current
+    n : float
+        Power-law exponent
+    """
+    
     mask = (x > 0) & (y > 0)
     log_x = np.log(x[mask])
     log_y = np.log(y[mask])
+    log_vc = np.log(voltage_criterion)
 
     # Filter out invalid values
     if np.count_nonzero(mask) < 2:
         raise ValueError("Not enough valid data points for log-log fit.")
     
-    # Weights: proportional to actual current
-    # (low voltages have larger fractional noise)
-    w = (x[mask]**weight_power) 
+    fit_y = log_y - log_vc
+    
+    # # Weights: proportional to actual current
+    # # (low voltages have larger fra ctional noise)
+    # w = (x[mask]**weight_power) 
+
+
+    # ----------------------------------------------------------------------
+    # Weight construction
+    # ----------------------------------------------------------------------
+    if weight_mode == "x":
+        # w = log_x ** weight_power # maybe x?
+        w = x[mask] ** weight_power # maybe x?
+
+    elif weight_mode == "index":
+        # Weight by progression in the *filtered* dataset
+        idx = np.arange(1, len(log_x) + 1)
+        w = idx ** weight_power
 
     X = sm.add_constant(log_x)
-    model = sm.WLS(log_y, X, weights=w)
+    model = sm.WLS(fit_y, X, weights=w)
     results = model.fit()
 
-    log_a = results.params[0]
-    b = results.params[1]
-    a = np.exp(log_a)
-    return a, b#, results
+    c = results.params[0]
+
+    n = results.params[1]
+    ic = np.exp(-c / n)
+    k = voltage_criterion / (ic**n)
+
+    return k, n, ic#, results
 
 
-def try_fit_power_law(x, y):
+def try_fit_power_law(x, y, voltage_criterion=None):
     """
     Try fitting power law; return (a, b) or (None, None) on failure.
     
@@ -246,10 +349,11 @@ def try_fit_power_law(x, y):
     Returns:
         tuple: (a, b), or (None, None) if fit fails.
     """
-    try:
-        return fit_power_law_wls(x,y)
-    except Exception:
-        return None, None
+    return fit_power_law_wls(x,y,voltage_criterion) 
+    # try:
+    #     return fit_power_law_wls(x,y,voltage_criterion) 
+    # except Exception:
+    #     return None, None, None
     
 
 def compute_R2_weighted(
