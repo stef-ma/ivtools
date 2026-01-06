@@ -75,7 +75,7 @@ def fit_IV_for_Ic(
 
         cutoff_idx = cutoff_idx_array[0]
         best_r2 = -np.inf
-        best_k = best_b = best_Ic = None
+        best_k = best_n = best_Ic = None
         best_start = None
 
         
@@ -124,28 +124,27 @@ def fit_IV_for_Ic(
                         x_fit = x[start:end]
                         y_fit = y[start:end]
 
-                        k, b = fit_utils.try_fit_power_law(x_fit, y_fit)
-                        # r2 = fit_utils.compute_R2(x, y, k, b) if k is not None and b is not None else -np.inf
-                        r2 = fit_utils.compute_R2_weighted(x, y, k, b) if k is not None and b is not None else -np.inf
-                        if k is not None and r2 > best_r2 and b > 0 and r2>lin_r2_full:
+                        k, n = fit_utils.try_fit_power_law(x_fit, y_fit)
+                        r2 = fit_utils.compute_R2_weighted(x, y, k, n) if k is not None and n is not None else -np.inf
+                        if k is not None and r2 > best_r2 and n > 0 and r2>lin_r2_full:
                             # FINDME 2
                             if r2>power_law_criterion: # use 99 with noise supression
                             # if r2>0.5: # 
                                 best_k = k
-                                best_b = b
+                                best_n = n
                                 best_r2 = r2
-                                best_Ic = (voltage_cutoff / k) ** (1 / b)
+                                best_Ic = fit_utils.powerlaw_inverted(voltage_cutoff,k,n)
                                 test_start = start
                                 test_end = end
                                 best_start = orig_indices[start] if orig_indices[start]!=-1 else 0
                                 best_end = orig_indices[end]
             # print (f'Best power law fit found for segment {i} in file {segment["File"].unique()[0]}: R² = {best_r2}.')
-        fit_successful = best_k is not None and best_b is not None
+        fit_successful = best_k is not None and best_n is not None
         fit_successes.append(fit_successful)
         if fit_successful:
             print(f'=====+++++=====++++======\n\n\nFound succesful fit. Slices in y:\n{y}\n are {test_start,test_end} corresponding to {y[test_start]} and {y[test_end]}.')
             ks.append(best_k)
-            bs.append(best_b)
+            bs.append(best_n)
             r2s.append(best_r2)
             I_cs.append(best_Ic)
             I_cHs.append(best_Ic * H_avgs[-1])
@@ -214,14 +213,14 @@ def fit_IV_for_Ic(
         # j = 0
         # for i, val in enumerate(len_adjusted_y):
         #     a = keep_mask[i]
-        #     b = y0[i]
+        #     n = y0[i]
         #     c = len_adjusted_y[i]
         #     if np.isnan(val):
         #         d = 'NaN'
         #     else:
         #         d = y0[keep_mask][j]
         #         j+=1
-        #     print(i,'|',a,'|',b,'|',c,'|',d,'|')
+        #     print(i,'|',a,'|',n,'|',c,'|',d,'|')
         # print('__________________________________')
 
 

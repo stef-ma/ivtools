@@ -207,89 +207,8 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
 
 def powerlaw(I, k, n):
     return k * I**n
-
-# from scipy.optimize import curve_fit
-
-# def fit_power_law_curvefit(x, y, sigma=None):
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-
-#     # Mask invalid
-#     mask = (x > 0) & (y >= 0)
-#     x = x[mask]
-#     y = y[mask]
-
-#     # Initial guesses
-#     n0 = 10
-#     k0 = y[np.argmax(x)] / x[np.argmax(x)]**n0
-
-#     popt, pcov = curve_fit(powerlaw, x, y, p0=[k0, n0], sigma=sigma, absolute_sigma=True)
-
-#     k, n = popt
-#     return k, n#, pcov
-
-
-# from scipy.odr import ODR, Model, RealData
-
-# def fit_power_law_odr(x, y):
-#     mask = (x>0) & (y>0)
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-
-#     def f(B, x):
-#         a, b = B
-#         return a + b * x
-
-#     # assume constant std in log(V) and log(I)
-#     data = RealData(log_x, log_y)
-#     model = Model(f)
-
-#     odr = ODR(data, model, beta0=[0.0, 1.0])
-#     out = odr.run()
-
-#     log_a, b = out.beta
-#     a = np.exp(log_a)
-#     return a, b
-
-# from scipy.stats import theilslopes
-
-# def fit_power_law_TheilSen(x, y):
-#     mask = (x>0)&(y>0)
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-
-#     slope, intercept, _, _ = theilslopes(log_y, log_x)
-#     a = np.exp(intercept)
-#     b = slope
-#     return a, b
-def fit_power_law(x, y):
-    """
-    Fit y = a * x^b using linear regression in log-log space.
-    
-    Parameters:
-        x (array-like): Independent variable (must be > 0). 
-        y (array-like): Dependent variable (must be > 0).
-    
-    Returns:
-        a (float): Prefactor in power law.
-        b (float): Exponent.
-        r2 (float): R² of the fit in log-log space.
-    """
-    x = np.asarray(x)
-    y = np.asarray(y)
-    
-    # Filter out invalid values
-    mask = (x > 1e-9) & (y > 0)
-    if np.count_nonzero(mask) < 2:
-        raise ValueError("Not enough valid data points for log-log fit.")
-    
-    log_x = np.log(x[mask])
-    log_y = np.log(y[mask])
-
-    b, log_a = np.polyfit(log_x, log_y, 1)
-    a = np.exp(log_a)
-
-    return a, b
+def powerlaw_inverted(vc,k,n):
+    return (vc / k) ** (1 / n)
 
 import statsmodels.api as sm
 
@@ -328,83 +247,10 @@ def try_fit_power_law(x, y):
         tuple: (a, b), or (None, None) if fit fails.
     """
     try:
-        # return fit_power_law(x, y)
         return fit_power_law_wls(x,y)
-        # return fit_power_law_odr(x,y)
-        # return fit_power_law_TheilSen(x,y)
-        # return fit_power_law_curvefit(x,y)
     except Exception:
         return None, None
     
-# def compute_R2(x, y, a, b):
-#     """
-#     Compute R² for the power-law fit y = a * x^b.
-    
-#     Parameters:
-#         x (array-like): Independent variable (must be > 0).
-#         y (array-like): Dependent variable (must be > 0).
-#         a (float): Prefactor from the fit.
-#         b (float): Exponent
-#     """
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-    
-#     # Filter out invalid values
-#     mask = (x > 1e-9) & (y > 0)
-#     if np.count_nonzero(mask) < 2:
-#         raise ValueError("Not enough valid data points for log-log fit.")
-    
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-
-#     # Compute R² in log-log space
-#     y_pred = np.log(a) + b * log_x
-#     ss_res = np.sum((log_y - y_pred) ** 2)
-#     ss_tot = np.sum((log_y - np.mean(log_y)) ** 2)
-#     r2 = 1 - ss_res / ss_tot
-
-#     return r2
-
-# def compute_R2_weighted(x, y, a, b, weight_power=15): #Used 10 as the weight_power for UKAEA
-#     """
-#     Compute weighted R² for the power-law fit y = a * x^b.
-
-#     Parameters:
-#         x (array-like): Independent variable (must be > 0).
-#         y (array-like): Dependent variable (must be > 0).
-#         a (float): Prefactor from the fit.
-#         b (float): Exponent.
-#         weight_power (float): Power for weighting: weights = x**weight_power
-
-#     Returns:
-#         float: weighted R² in log-log space
-#     """
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-    
-#     # Filter out invalid values
-#     mask = (x > 1e-9) & (y > 0)
-#     if np.count_nonzero(mask) < 2:
-#         raise ValueError("Not enough valid data points for log-log fit.")
-    
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-
-#     # Weights proportional to x**weight_power
-#     w = log_x**0  # fallback
-#     w = x[mask]**weight_power
-#     # TODO I am starting to think that it would be better to weigh "later" points more than "high current points". Ie for an IV of 5 points 5**3
-#     # is much more different to 4**3 than 160mA**10 compared to 140mA**10.... Food for thought.
-
-#     # Predicted log-values
-#     y_pred = np.log(a) + b * log_x
-
-#     # Weighted sums of squares
-#     ss_res = np.sum(w * (log_y - y_pred)**2)
-#     ss_tot = np.sum(w * (log_y - np.sum(w*log_y)/np.sum(w))**2)
-
-#     r2_weighted = 1 - ss_res / ss_tot
-#     return r2_weighted
 
 def compute_R2_weighted(
     x, 
@@ -632,3 +478,33 @@ def anchor_low_voltage(x, y, noise_level):
     order = np.argsort(x_aug)
 
     return x_aug[order], y_aug[order]
+
+
+# def fit_power_law(x, y):
+#     """
+#     Fit y = a * x^b using linear regression in log-log space.
+    
+#     Parameters:
+#         x (array-like): Independent variable (must be > 0). 
+#         y (array-like): Dependent variable (must be > 0).
+    
+#     Returns:
+#         a (float): Prefactor in power law.
+#         b (float): Exponent.
+#         r2 (float): R² of the fit in log-log space.
+#     """
+#     x = np.asarray(x)
+#     y = np.asarray(y)
+    
+#     # Filter out invalid values
+#     mask = (x > 1e-9) & (y > 0)
+#     if np.count_nonzero(mask) < 2:
+#         raise ValueError("Not enough valid data points for log-log fit.")
+    
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
+
+#     b, log_a = np.polyfit(log_x, log_y, 1)
+#     a = np.exp(log_a)
+
+#     return a, b
