@@ -15,7 +15,8 @@ def fit_IV_for_Ic(
         power_law_criterion,
         min_fit_points=3, 
         max_fit_points=5, 
-        noise_level=1.5e-5
+        noise_level=1.5e-5,
+        lin_sub_level = None
         ):
     """
     Analyze I–V data to extract segments, perform power-law fitting,
@@ -80,7 +81,8 @@ def fit_IV_for_Ic(
 
         
         if np.any(y > voltage_cutoff):
-            y = fit_utils.lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion)
+            lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff
+            y = fit_utils.lin_subtraction(x,y,lin_sub_level,linear_sub_criterion)
            
             x0 = x.copy()
             y0 = y.copy()

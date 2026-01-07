@@ -264,10 +264,84 @@ import statsmodels.api as sm
 #     ic = None
 #     return k, n, ic#, results
 
+# def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode='index'): 
+#     """
+#     Find parameters to describe non-linear IV behavior.
+#     Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. 
+#     Fit on y′ = n*x + c, for: 
+#         x = log I
+#         y′ = logV − logVc 
+#         c = −n log Ic
+
+#     Parameters
+#     ----------
+#     x : array-like
+#         Independent variable (must be > 0).
+#     y : array-like
+#         Dependent variable (must be > 0).
+#     voltage_criterion : float
+#         Voltage criterion for Ic calulation.
+#     weight_power : float
+#         Exponent used when constructing weights.
+#     weight_mode : str
+#         "x"      -> weights = x**weight_power
+#         "index"  -> weights = (1..N)**weight_power
+
+#     Returns
+#     -------
+#     k : float
+#         Pre exponent expected downstream
+#     Ic : float
+#         Critical current
+#     n : float
+#         Power-law exponent
+#     """
+    
+#     mask = (x > 0) & (y > 0)
+#     log_x = np.log(x[mask])
+#     log_y = np.log(y[mask])
+#     log_vc = np.log(voltage_criterion)
+
+#     # Filter out invalid values
+#     if np.count_nonzero(mask) < 2:
+#         raise ValueError("Not enough valid data points for log-log fit.")
+    
+#     fit_y = log_y - log_vc
+    
+#     # # Weights: proportional to actual current
+#     # # (low voltages have larger fra ctional noise)
+#     # w = (x[mask]**weight_power) 
+
+
+#     # ----------------------------------------------------------------------
+#     # Weight construction
+#     # ----------------------------------------------------------------------
+#     if weight_mode == "x":
+#         # w = log_x ** weight_power # maybe x?
+#         w = x[mask] ** weight_power # maybe x?
+
+#     elif weight_mode == "index":
+#         # Weight by progression in the *filtered* dataset
+#         idx = np.arange(1, len(log_x) + 1)
+#         w = idx ** weight_power
+
+#     X = sm.add_constant(log_x)
+#     model = sm.WLS(fit_y, X, weights=w)
+#     results = model.fit()
+
+#     c = results.params[0]
+
+#     n = results.params[1]
+#     ic = np.exp(-c / n)
+#     k = voltage_criterion / (ic**n)
+
+#     return k, n, ic#, results
+
+
 def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode='index'): 
     """
     Find parameters to describe non-linear IV behavior.
-    Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. 
+    Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. Centers log V with the weights for better fit stability. 
     Fit on y′ = n*x + c, for: 
         x = log I
         y′ = logV − logVc 
@@ -308,11 +382,6 @@ def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode
     
     fit_y = log_y - log_vc
     
-    # # Weights: proportional to actual current
-    # # (low voltages have larger fra ctional noise)
-    # w = (x[mask]**weight_power) 
-
-
     # ----------------------------------------------------------------------
     # Weight construction
     # ----------------------------------------------------------------------
@@ -325,18 +394,43 @@ def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode
         idx = np.arange(1, len(log_x) + 1)
         w = idx ** weight_power
 
-    X = sm.add_constant(log_x)
+    # ----------------------------------------------------------------------
+    # Weighted centering of log_x
+    # ----------------------------------------------------------------------
+    w_sum = np.sum(w)
+    x_bar = np.sum(w * log_x) / w_sum     # weighted mean
+    log_xc = log_x - x_bar                # centered coordinates
+
+
+    X = sm.add_constant(log_xc)
     model = sm.WLS(fit_y, X, weights=w)
     results = model.fit()
 
-    c = results.params[0]
-
     n = results.params[1]
+
+    c = results.params[0]
+    c = c - n * x_bar        # original intercept
     ic = np.exp(-c / n)
+
     k = voltage_criterion / (ic**n)
 
-    return k, n, ic#, results
+    cov = results.cov_params()
 
+    # var_ct = cov[0, 0]        # Var(ĉ)
+    # var_n  = cov[1, 1]        # Var(n)
+    # cov_cn = cov[0, 1]        # Cov(ĉ, n)
+
+    # # Variance of log(Ic)
+    # var_log_ic = (
+    #     var_ct / n**2
+    #     + (c**2 / n**4) * var_n
+    #     - 2 * c / n**3 * cov_cn
+    # )
+
+    # sigma_ic = ic * np.sqrt(var_log_ic)
+
+
+    return k, n, ic#, results
 
 def try_fit_power_law(x, y, voltage_criterion=None):
     """
@@ -441,19 +535,19 @@ def compute_R2_weighted(
     return 1 - ss_res / ss_tot
 
 
-def lin_subtraction(x,y,voltage_cutoff,linear_sub_criterion):
+def lin_subtraction(x,y,cutoff,linear_sub_criterion):
     best_lin_r2 = 0
     best_p = None
 
-    fit_check_y = y[y<voltage_cutoff]
-    fit_check_x = x[y<voltage_cutoff]
+    fit_check_y = y[y<cutoff]
+    fit_check_x = x[y<cutoff]
 
-    if len(fit_check_x)>=3: # better behavior for large IVs
-        fit_check_y = y[y<voltage_cutoff*.5]
-        fit_check_x = x[y<voltage_cutoff*.5]
+    # if len(fit_check_x)>=3: # better behavior for large IVs
+    #     fit_check_y = y[y<cutoff*.5]
+    #     fit_check_x = x[y<cutoff*.5]
 
     for start in range(0,len(y)//3):
-        if y[start] >= voltage_cutoff and start !=0:
+        if y[start] >= cutoff and start !=0:
             continue
         for end in range(1,len(y)):
         # for end in [len(y)-1]:
@@ -515,7 +609,7 @@ def masking(x,y,noise_level):
     # monotonic_mask = np.ones(len(y),dtype=bool)
 
     # Update global mask:
-    # keep_mask = keep_mask & monotonic_mask
+    keep_mask = keep_mask & monotonic_mask
     application_mask = application_mask & monotonic_mask
 
     # # Apply local mask:
@@ -529,14 +623,14 @@ def masking(x,y,noise_level):
         # # print(y)
         # y = np.where(np.abs(y) < noise_level, None, y)
         zero_mask = y >= 0
-        # keep_mask = keep_mask & zero_mask
+        keep_mask = keep_mask & zero_mask
         application_mask = application_mask & zero_mask
 
         # x[~zero_mask] = 0 
         # y[~zero_mask] = 0 
 
         noise_mask = np.abs(y) >= noise_level
-        # keep_mask = keep_mask & noise_mask
+        keep_mask = keep_mask & noise_mask
         application_mask = application_mask & noise_mask
 
         # x[~noise_mask] = 0 
