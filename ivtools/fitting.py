@@ -37,6 +37,9 @@ def fit_IV_for_Ic(
             - dBdt_avgs (list of float)
             - I_cHs (list of float or None)
     """
+    if lin_sub_level is None:
+        lin_sub_level=voltage_cutoff
+
     segments = fit_utils.split_by_jump(df)
     fit_successes = []
     ks, bs, r2s, I_cs, I_cHs, simple_Ics = [], [], [], [], [], []
@@ -46,6 +49,8 @@ def fit_IV_for_Ic(
     best_ends = []
     processed_segments = []
     dlen = []
+    sigmas_ic = []
+    sigmas_n = []
 
     for i,segment in enumerate(segments):
         H_avgs.append(np.nanmean(segment['Field [T]']))
@@ -71,6 +76,8 @@ def fit_IV_for_Ic(
             best_ends.append(None)
             segments_power.append(pd.DataFrame(columns=['Current [A]', 'Voltage [V]']))
             dlen.append(datapoints)
+            sigmas_ic.append(None)
+            sigmas_n.append(None)
 
             continue
 
@@ -81,7 +88,7 @@ def fit_IV_for_Ic(
 
         
         if np.any(y > voltage_cutoff):
-            lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff
+            # lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff
             y = fit_utils.lin_subtraction(x,y,lin_sub_level,linear_sub_criterion)
            
             x0 = x.copy()
@@ -118,7 +125,7 @@ def fit_IV_for_Ic(
             if lin_r2_full>.95:
                 continue
             for start in range(0,len(y)-1):
-                for end in range(len(y)//2,len(y)):
+                for end in range(1,len(y)):
                 # for end in [len(y)-1]: #USED FOR UKAEA
                     if len(x[start:end]) < min_fit_points or len(x[start:end]) > max_fit_points:
                         continue
@@ -127,7 +134,7 @@ def fit_IV_for_Ic(
                         y_fit = y[start:end]
 
                         # k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit) # If old system, where cutoff is not needed.
-                        k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff)
+                        k, n, ic, sigma_ic, sigma_n = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff)
                         r2 = fit_utils.compute_R2_weighted(x, y, k, n) if k is not None and n is not None else -np.inf
                         if k is not None and r2 > best_r2 and n > 0 and r2>lin_r2_full:
                             # FINDME 2
@@ -157,6 +164,8 @@ def fit_IV_for_Ic(
             # segments_power.append(segment.iloc[best_start:].copy())
             segments_power.append(segment.iloc[best_start:best_end][['Current [A]', 'Voltage [V]']].copy())
             dlen.append(datapoints)
+            sigmas_ic.append(sigma_ic)
+            sigmas_n.append(sigma_n)
 
 
 
@@ -171,6 +180,8 @@ def fit_IV_for_Ic(
             # simple_Ics.append(None)
             segments_power.append(pd.DataFrame(columns=['Current [A]', 'Voltage [V]']))
             dlen.append(datapoints)
+            sigmas_ic.append(None)
+            sigmas_n.append(None)
 
 
         # Save Processed IV for analysis. Replace non monotonic points with NaN
@@ -227,5 +238,5 @@ def fit_IV_for_Ic(
         # print('__________________________________')
 
 
-    return fit_successes, I_cs, ks, bs, r2s, segments, segments_power, processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, dlen
+    return fit_successes, I_cs, ks, bs, r2s, segments, segments_power, processed_segments, best_starts, best_ends, H_avgs, dBdt_avgs, I_cHs, dlen, sigmas_ic, sigmas_n 
 

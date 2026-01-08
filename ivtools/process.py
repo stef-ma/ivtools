@@ -109,7 +109,7 @@ def process_ivf(
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         with suppress_print(verbose):
-            fit_successes, I_cs, ks, bs, r2s, segments, segments_power,processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, dlen = fitting.fit_IV_for_Ic(
+            fit_successes, I_cs, ks, bs, r2s, segments, segments_power,processed_segments, best_starts,best_ends, H_avgs, dBdt_avgs, I_cHs, dlen, sigmas_ic, sigmas_n = fitting.fit_IV_for_Ic(
                 df, 
                 voltage_cutoff, 
                 linear_sub_criterion,
@@ -163,7 +163,9 @@ def process_ivf(
                 'Sample': sample,
                 'Orientation': orientation,
                 'Magnet': magnet,
-                'Data_Length': dlen[k]
+                'Data_Length': dlen[k],
+                'I_c Error':sigmas_ic[k],
+                'n Error':sigmas_n[k]
             }
             running_iv_dicts.append(result_summary)
             fits.append(result_summary)

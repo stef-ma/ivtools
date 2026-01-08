@@ -338,7 +338,13 @@ import statsmodels.api as sm
 #     return k, n, ic#, results
 
 
-def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode='index'): 
+def fit_power_law_wls(
+        x, 
+        y, 
+        voltage_criterion = None, 
+        weight_power=3,
+        weight_mode='index'
+        ): 
     """
     Find parameters to describe non-linear IV behavior.
     Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. Centers log V with the weights for better fit stability. 
@@ -416,21 +422,23 @@ def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode
 
     cov = results.cov_params()
 
-    # var_ct = cov[0, 0]        # Var(ĉ)
-    # var_n  = cov[1, 1]        # Var(n)
-    # cov_cn = cov[0, 1]        # Cov(ĉ, n)
+    var_ct = cov[0, 0]        # Var(ĉ)
+    var_n  = cov[1, 1]        # Var(n)
+    cov_cn = cov[0, 1]        # Cov(ĉ, n)
 
-    # # Variance of log(Ic)
-    # var_log_ic = (
-    #     var_ct / n**2
-    #     + (c**2 / n**4) * var_n
-    #     - 2 * c / n**3 * cov_cn
-    # )
+    # Variance of log(Ic)
+    var_log_ic = (
+        var_ct / n**2
+        + (c**2 / n**4) * var_n
+        - 2 * c / n**3 * cov_cn
+    )
 
-    # sigma_ic = ic * np.sqrt(var_log_ic)
+    sigma_ic = ic * np.sqrt(var_log_ic)
+    sigma_n = np.sqrt(cov[1, 1])
 
+    print(w)
 
-    return k, n, ic#, results
+    return k, n, ic, sigma_ic, sigma_n#, results
 
 def try_fit_power_law(x, y, voltage_criterion=None):
     """
@@ -528,10 +536,10 @@ def compute_R2_weighted(
     ss_res = np.sum(w * (log_y - y_pred)**2)
     ss_tot = np.sum(w * (log_y - y_mean_w)**2)
 
-    # Guard against pathological degeneracy
-    if ss_tot == 0:
-        return 1.0
-
+    # # Guard against pathological degeneracy
+    # if ss_tot == 0:
+    #     return 1.0
+    print(w,'\n')
     return 1 - ss_res / ss_tot
 
 
@@ -542,11 +550,11 @@ def lin_subtraction(x,y,cutoff,linear_sub_criterion):
     fit_check_y = y[y<cutoff]
     fit_check_x = x[y<cutoff]
 
-    # if len(fit_check_x)>=3: # better behavior for large IVs
-    #     fit_check_y = y[y<cutoff*.5]
-    #     fit_check_x = x[y<cutoff*.5]
+    # # if len(fit_check_x)>=3: # better behavior for large IVs
+    # #     fit_check_y = y[y<cutoff*.5]
+    # #     fit_check_x = x[y<cutoff*.5]
 
-    for start in range(0,len(y)//3):
+    for start in range(0,len(y)):
         if y[start] >= cutoff and start !=0:
             continue
         for end in range(1,len(y)):
@@ -656,7 +664,7 @@ def anchor_low_voltage(x, y, noise_level):
     I_min = np.min(pos_x)
 
     # Create a synthetic anchor point
-    I_anchor = 0.1 * I_min      # one order of magnitude lower
+    I_anchor = 1e-6 * I_min      # six order of magnitude lower
     V_anchor = 0      # baseline measurable voltage
     # V_anchor = 0.001 * noise_level      # baseline measurable voltage
     
