@@ -29,7 +29,7 @@ def split_by_jump(df, drop_factor=0.5):
             running_max = I[i]
             running_min = I[i]
 
-        if F[i] != F[i - 1]:
+        elif F[i] != F[i - 1]:
             split_idx.append(i)
             running_max = I[i]
             running_min = I[i]
@@ -436,7 +436,7 @@ def fit_power_law_wls(
     sigma_ic = ic * np.sqrt(var_log_ic)
     sigma_n = np.sqrt(cov[1, 1])
 
-    print(w)
+    # print(w)
 
     return k, n, ic, sigma_ic, sigma_n#, results
 
@@ -451,11 +451,11 @@ def try_fit_power_law(x, y, voltage_criterion=None):
     Returns:
         tuple: (a, b), or (None, None) if fit fails.
     """
-    return fit_power_law_wls(x,y,voltage_criterion) 
-    # try:
-    #     return fit_power_law_wls(x,y,voltage_criterion) 
-    # except Exception:
-    #     return None, None, None
+    # return fit_power_law_wls(x,y,voltage_criterion) 
+    try:
+        return fit_power_law_wls(x,y,voltage_criterion) 
+    except Exception:
+        return None, None, None, None, None
     
 
 def compute_R2_weighted(
@@ -463,7 +463,7 @@ def compute_R2_weighted(
     y, 
     a, 
     b, 
-    weight_power=5, 
+    weight_power=3, 
     weight_mode="index"      # "x" or "index"
 ):
     """
@@ -539,58 +539,229 @@ def compute_R2_weighted(
     # # Guard against pathological degeneracy
     # if ss_tot == 0:
     #     return 1.0
-    print(w,'\n')
+    # print(w,'\n')
     return 1 - ss_res / ss_tot
 
 
-def lin_subtraction(x,y,cutoff,linear_sub_criterion):
-    best_lin_r2 = 0
-    best_p = None
+# def lin_subtraction(x,y,cutoff,linear_sub_criterion):
+#     best_lin_r2 = 0
+#     best_p = None
 
-    fit_check_y = y[y<cutoff]
-    fit_check_x = x[y<cutoff]
+#     fit_check_y = y[y<cutoff]
+#     fit_check_x = x[y<cutoff]
 
-    # # if len(fit_check_x)>=3: # better behavior for large IVs
-    # #     fit_check_y = y[y<cutoff*.5]
-    # #     fit_check_x = x[y<cutoff*.5]
+#     # # if len(fit_check_x)>=3: # better behavior for large IVs
+#     # #     fit_check_y = y[y<cutoff*.5]
+#     # #     fit_check_x = x[y<cutoff*.5]
 
-    for start in range(0,len(y)):
-        if y[start] >= cutoff and start !=0:
-            continue
-        for end in range(1,len(y)):
-        # for end in [len(y)-1]:
-            if end - start < 2:
-                continue
-            else:
-                x_fit = x[start:end]
-                y_fit = y[start:end]
-                # Step 2. Fit linear and compute R2
-                try:
-                    p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
-                    y_pred = np.polyval(p, fit_check_x)
-                    ss_res = np.sum((fit_check_y - y_pred) ** 2)
-                    ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
-                    lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
-                except:
-                    lin_r2 = 0
-                if lin_r2 > best_lin_r2:
-                    best_lin_r2 = lin_r2
-                    best_p = p
+#     for start in range(0,len(y)):
+#         # if y[start] >= cutoff and start !=0:
+#         #     continue
+#         for end in range(1,len(y)):
+#         # for end in [len(y)-1]:
+#             if end - start < 2:
+#                 continue
+#             else:
+#                 x_fit = x[start:end]
+#                 y_fit = y[start:end]
+#                 # Step 2. Fit linear and compute R2
+#                 try:
+#                     p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
+#                     y_pred = np.polyval(p, fit_check_x)
+#                     ss_res = np.sum((fit_check_y - y_pred) ** 2)
+#                     ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
+#                     lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
+#                 except:
+#                     lin_r2 = 0
+#                 if lin_r2 > best_lin_r2:
+#                     best_lin_r2 = lin_r2
+#                     best_p = p
 
-    if best_lin_r2 and best_lin_r2>linear_sub_criterion:
-        # plt.clf()
-        # print('\n\n\n\nSubtracted!\n\n\n\n')
-        # plt.plot(np.linspace(1,len(y),len(y)),y)
-        lin_fit_full_y = np.polyval(best_p, x)
-        y = y - lin_fit_full_y
-        # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
-        # plt.plot(np.linspace(1,len(y),len(y)),y)
-        # plt.gca().axhspan(0,0.01e-6)
-        # plt.gca().axhspan(24.9e-6,25.01e-6)
-        # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
-        # plt.gca().grid()
-        # plt.show()
-    return y
+#     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
+#         # plt.clf()
+#         # print('\n\n\n\nSubtracted!\n\n\n\n')
+#         # plt.plot(np.linspace(1,len(y),len(y)),y)
+#         lin_fit_full_y = np.polyval(best_p, x)
+#         y = y - lin_fit_full_y
+#         # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
+#         # plt.plot(np.linspace(1,len(y),len(y)),y)
+#         # plt.gca().axhspan(0,0.01e-6)
+#         # plt.gca().axhspan(24.9e-6,25.01e-6)
+#         # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
+#         # plt.gca().grid()
+#         # plt.show()
+#     return y
+
+
+# def lin_subtraction(x,y,cutoff,linear_sub_criterion): # cutoff as resistance
+#     best_lin_r2 = 0
+#     best_p = None
+
+#     fit_check_y = y[y/x<cutoff]
+#     fit_check_x = x[y/x<cutoff]
+
+#     # # if len(fit_check_x)>=3: # better behavior for large IVs
+#     # #     fit_check_y = y[y<cutoff*.5]
+#     # #     fit_check_x = x[y<cutoff*.5]
+
+#     for start in range(0,len(y)):
+#         # if y[start] >= cutoff and start !=0:
+#         #     continue
+#         for end in range(1,len(y)):
+#         # for end in [len(y)-1]:
+#             if end - start < 2:
+#                 continue
+#             else:
+#                 x_fit = x[start:end]
+#                 y_fit = y[start:end]
+#                 # Step 2. Fit linear and compute R2
+#                 try:
+#                     p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
+#                     y_pred = np.polyval(p, fit_check_x)
+#                     ss_res = np.sum((fit_check_y - y_pred) ** 2)
+#                     ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
+#                     lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
+#                 except:
+#                     lin_r2 = 0
+#                 if lin_r2 > best_lin_r2:
+#                     best_lin_r2 = lin_r2
+#                     best_p = p
+
+#     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
+#         # plt.clf()
+#         # print('\n\n\n\nSubtracted!\n\n\n\n')
+#         # plt.plot(np.linspace(1,len(y),len(y)),y)
+#         lin_fit_full_y = np.polyval(best_p, x)
+#         y = y - lin_fit_full_y
+#         # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
+#         # plt.plot(np.linspace(1,len(y),len(y)),y)
+#         # plt.gca().axhspan(0,0.01e-6)
+#         # plt.gca().axhspan(24.9e-6,25.01e-6)
+#         # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
+#         # plt.gca().grid()
+#         # plt.show()
+#     return y
+
+import numpy as np
+from scipy.signal import savgol_filter
+
+def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
+    """
+    Identify and subtract a linear background using log–log slope deviation.
+
+    Parameters
+    ----------
+    x : array-like
+        Current
+    y : array-like
+        Voltage
+    cutoff : unused (kept for drop-in compatibility)
+    linear_sub_criterion : float
+        Allowed deviation of log–log slope from 1 (delta)
+
+    Returns
+    -------
+    y_corr : ndarray
+        Background-subtracted voltage
+    """
+
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    # --- basic sanity masking ---
+    mask = (x != 0) & (y != 0)
+    x0 = x[mask]
+    y0 = y[mask]
+
+    if len(x0) < 2:
+        return y  # not enough data to do anything safely
+    
+
+    # --- log–log slope ---
+    logx = np.log(np.abs(x0))
+    logy = np.log(np.abs(y0))
+
+    # # smooth to suppress numerical noise
+    # win = min(len(logx) // 2 * 2 - 1, 11)
+    # if win >= 5:
+    #     logy_s = savgol_filter(logy, win, 2)
+    # else:
+    #     logy_s = logy
+
+    N = len(logx)
+
+    # conservative smoothing for short IVs
+    if N >= 6:
+        win = 3
+    else:
+        win = None
+
+    if win is not None:
+        logy_s = savgol_filter(logy, win, 2)
+    else:
+        logy_s = logy
+
+
+    slope = np.gradient(logy_s, logx)
+
+
+    # --- identify linear regime (slope ~ 1) ---
+    good = np.abs(slope - 1) < cutoff
+
+    # require contiguity starting from lowest |I|
+    idx = np.argsort(np.abs(x0))
+    good_sorted = good[idx]
+
+    count = 0
+    for g in good_sorted:
+        if g:
+            count += 1
+        else:
+            break
+    # print('-----------------\nThe slope\n:',slope)
+    # print('\nThe good\n:',good)
+    # print('\nThe count\n:',count)
+
+    if count < 3:
+        return y  # no defensible linear regime
+
+    lin_idx = idx[:count]
+    x_lin = x0[lin_idx]
+    y_lin = y0[lin_idx]
+
+    # print('\n\n\n+++++++++++++++++++++++++++++\n\n\nCorrection:\n',y)
+    # --- fit linear background ---
+    try:
+        p = np.polyfit(x_lin, y_lin, 1)
+    except Exception:
+        return y
+        
+    if p[0] <= 0:
+        return y
+
+
+    # --- subtract globally ---
+    y_corr = y - np.polyval(p, x)
+
+    y_pred = np.polyval(p, x_lin)
+
+    ss_res = np.sum((y_lin - y_pred)**2)
+    ss_tot = np.sum((y_lin - np.mean(y_lin))**2)
+
+    # guard against degenerate case
+    if ss_tot == 0:
+        return y
+
+    r2 = 1 - ss_res / ss_tot
+
+    if r2 < linear_sub_criterion:
+        return y
+
+
+    print('\n\n\n+++++++++++++++++++++++++++++\n\n\nCorrection:\n',y,'\n',y_corr,'\n',p)
+
+    return y_corr
+
 
 def masking(x,y,noise_level):
 

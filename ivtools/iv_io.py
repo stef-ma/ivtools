@@ -332,12 +332,14 @@ COLUMN_META_FIT = {
     "I_c_A":                  ("Ic", "A"),
     "I_c_A_pos_dBdt":         ("Ic (dH/dt>0)", "A"),
     "I_c_A_neg_dBdt":         ("Ic (dH/dt<=0)", "A"),
+    "I_c_A_err":              ("Ic Error", "A"),
     "I_cpw_Acmw":             ("Icpw", "A/cm-w"),
     "J_c_MAcm2":              ("Jc", "MA/cm^2"),
     "k":                      ("k", ""),
     "n":                      ("n", ""),
     "n_pos_dBdt":             ("n (dH/dt>0)", ""),
     "n_neg_dBdt":             ("n (dH/dt<=0)", ""),
+    "n_err":                  ("n Error", ""),
     "pdx":                    ("IV idx", ""),
     "fit_start_idx":          ("Fit start idx", ""),
     "fit_end_idx":            ("Fit end idx", ""),
@@ -359,12 +361,14 @@ COLUMN_META_FIT_ORIGIN = {
     "I_c_A":                  ("I\-(c)", "A"),
     "I_c_A_pos_dBdt":         ("I\-(c) (dH/dt>0)", "A"),
     "I_c_A_neg_dBdt":         ("I\-(c) (dH/dt<=0)", "A"),
+    "I_c_A_err":              ("I\-(c) Error", "A"),
     "I_cpw_Acmw":             ("I\-(cpw)", "A/cm-w"),
     "J_c_MAcm2":              ("J\-(c)", "MA/cm^2"),
     "k":                      ("k", ""),
     "n":                      ("n", ""),
     "n_pos_dBdt":             ("n (dH/dt>0)", ""),
     "n_neg_dBdt":             ("n (dH/dt<=0)", ""),
+    "n_err":                  ("n Error", ""),
     "pdx":                    ("IV idx", ""),
     "fit_start_idx":          ("Fit start idx", ""),
     "fit_end_idx":            ("Fit end idx", ""),
@@ -398,7 +402,9 @@ FIT_PRESETS = {
     "minimal_expanded": [
         "Field_T",
         "I_c_A",
+        "I_c_A_err",
         "n",
+        "n_err",
         "k",
         "pdx",
         "fnames",
@@ -609,6 +615,8 @@ def save_fitdata(
     fit_df["fit_start_idx"] = fit_df.get("fit_start_index", fit_df.get("fit_start_idx", np.nan))
     fit_df["fit_end_idx"] = fit_df.get("fit_end_index", fit_df.get("fit_end_idx", np.nan))
     fit_df["fnames"] = fit_df.get("File", fit_df.get("fnames", ""))
+    fit_df["I_c_A_err"] = fit_df.get("I_c Error", fit_df.get("I_c_err", np.nan))
+    fit_df["n_err"] = fit_df.get("n Error", fit_df.get("n_err", np.nan))
 
     # validate columns
     missing = [c for c in columns if c not in fit_df.columns]

@@ -98,8 +98,11 @@ def fit_IV_for_Ic(
             # print(f'\n\n\n\nIndices originally:\n{orig_indices}')
 
             x,y,keep_mask,application_mask = fit_utils.masking(x,y,noise_level)
-
             orig_indices = orig_indices[application_mask]
+
+            # y = fit_utils.lin_subtraction(x,y,lin_sub_level,linear_sub_criterion)
+            # x,y,keep_mask,application_mask = fit_utils.masking(x,y,noise_level)
+            # orig_indices = orig_indices[application_mask]
         
 
             # Add stabilizing anchor point
@@ -123,6 +126,20 @@ def fit_IV_for_Ic(
             except:
                 lin_r2_full = -np.inf
             if lin_r2_full>.95:
+                fit_successes.append(False)
+                ks.append(None)
+                bs.append(None)
+                r2s.append(None)
+                simple_Ics.append(None)
+                I_cs.append(None)
+                I_cHs.append(None)
+                # simple_Ics.append(None)
+                best_starts.append(None)
+                best_ends.append(None)
+                segments_power.append(pd.DataFrame(columns=['Current [A]', 'Voltage [V]']))
+                dlen.append(datapoints)
+                sigmas_ic.append(None)
+                sigmas_n.append(None)
                 continue
             for start in range(0,len(y)-1):
                 for end in range(1,len(y)):
@@ -152,7 +169,7 @@ def fit_IV_for_Ic(
         fit_successful = best_k is not None and best_n is not None
         fit_successes.append(fit_successful)
         if fit_successful:
-            print(f'=====+++++=====++++======\n\n\nFound succesful fit. Slices in y:\n{y}\n are {test_start,test_end} corresponding to {y[test_start]} and {y[test_end]}.')
+            # print(f'=====+++++=====++++======\n\n\nFound succesful fit. Slices in y:\n{y}\n are {test_start,test_end} corresponding to {y[test_start]} and {y[test_end]}.')
             ks.append(best_k)
             bs.append(best_n)
             r2s.append(best_r2)
@@ -207,13 +224,13 @@ def fit_IV_for_Ic(
         # segment['Current [A]'] = len_adjusted_x
         # segment['Voltage [V]'] = len_adjusted_y
         # processed_segments.append(segment)
-        # newseg = segment.copy()
+        # newseg = segment.copy(deep=True)
         newseg = segment
         newseg['Current [A]'] = len_adjusted_x
         newseg['Voltage [V]'] = len_adjusted_y
         processed_segments.append(newseg)
-        if fit_successful:
-            print(f'Slices in processed segment:\n{segment["Voltage [V]"]}\n are {best_start,best_end} corresponding to {segment["Voltage [V]"].iloc[best_start]} and {segment["Voltage [V]"].iloc[best_end]}.')
+        # if fit_successful:
+        #     print(f'Slices in processed segment:\n{segment["Voltage [V]"]}\n are {best_start,best_end} corresponding to {segment["Voltage [V]"].iloc[best_start]} and {segment["Voltage [V]"].iloc[best_end]}.')
 
 
     
