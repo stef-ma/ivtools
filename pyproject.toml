@@ -13,6 +13,7 @@ dependencies = [
     "nptdms",
     "tqdm",
     "MultiPyVu",
+    "statsmodels"
 ]
 
 [build-system]
