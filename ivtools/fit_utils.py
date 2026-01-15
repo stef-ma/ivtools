@@ -706,26 +706,70 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
 
 
     # --- identify linear regime (slope ~ 1) ---
+    # good = (slope > 0) & (slope < 1 + cutoff)
     good = np.abs(slope - 1) < cutoff
 
     # require contiguity starting from lowest |I|
     idx = np.argsort(np.abs(x0))
     good_sorted = good[idx]
 
-    count = 0
-    for g in good_sorted:
+    # Conservative
+    # count = 0
+    # for g in good_sorted:
+    #     if g:
+    #         count += 1
+    #     else:
+    #         break
+
+
+    # if count < 3:
+    #     return y  # no defensible linear regime
+
+    # lin_idx = idx[:count]
+
+    # # Improved 1
+    # max_bad = 3
+    # count = 0
+    # bad = 0
+
+    # for g in good_sorted:
+    #     if g:
+    #         count += 1
+    #     else:
+    #         bad += 1
+
+    #         if bad > max_bad:
+    #             break
+
+    
+    # if count < 3:
+    #     return y  # no defensible linear regime
+
+    # lin_idx = idx[:count]
+
+    # Improved 2
+    max_bad = 3
+    bad = 0
+    last_good_idx = None
+
+    for i, g in enumerate(good):
         if g:
-            count += 1
+            last_good_idx = i
+            bad = 0
         else:
-            break
-    # print('-----------------\nThe slope\n:',slope)
-    # print('\nThe good\n:',good)
-    # print('\nThe count\n:',count)
+            bad += 1
+            if bad > max_bad:
+                break
 
-    if count < 3:
-        return y  # no defensible linear regime
+    if last_good_idx:
+        lin_idx = idx[:last_good_idx]
+    else:
+        return y
+    
+    print('-----------------\nThe slope\n:',slope)
+    print('\nThe good\n:',good)
+    print('\nThe count\n:',lin_idx)
 
-    lin_idx = idx[:count]
     x_lin = x0[lin_idx]
     y_lin = y0[lin_idx]
 

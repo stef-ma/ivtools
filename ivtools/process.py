@@ -139,8 +139,8 @@ def process_ivf(
             if len(pulse_index) == 1:
                 pulse_index = pulse_index[0]
             else:
-                if verbose:
-                    print(f"[Warning] Multiple pulse indices found in segment {k}: {segments[k]}") # TODO: Figure out what is happening here.
+                # if verbose:
+                #     print(f"[Warning] Multiple pulse indices found in segment {k}: {segments[k]}") # TODO: Figure out what is happening here.
                 pulse_index = pulse_index[0]
         if fit_success:
             result_summary = {

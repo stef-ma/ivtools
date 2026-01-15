@@ -20,6 +20,7 @@ dependencies:
     nptdms
     tqdm
     MultiPyVu
+    statsmodels
 
 # Installation
 
