@@ -35,11 +35,16 @@ class IV_File:
         ):
         # Read the TDMS file and initialize attributes
         self.tdms_file = nptdms.TdmsFile.read(filepath)
+
+        self.grp_names = []
+        for grp in self.tdms_file.groups():
+            self.grp_names.append(grp.name)
+
         self.path = Path(filepath)
         self.current_chan = current_channel
         # Check for required channels
         chans = []
-        for chan in self.tdms_file['p'].channels():
+        for chan in self.tdms_file[self.grp_names[0]].channels():
             chans.append(chan.name)
         if ppms_field is None:
             required_channels = {voltage_channel, current_channel, 'Field'}
@@ -100,7 +105,7 @@ class IV_File:
             - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
             The field needs to be upsampled.
         '''
-        group = self.tdms_file['p'] # Our TDMS files have only one group.
+        group = self.tdms_file[self.grp_names[0]] # Our TDMS files have only one group.
         channel=group[selection]
         c = self._parse_config(channel)
         data = channel.data
