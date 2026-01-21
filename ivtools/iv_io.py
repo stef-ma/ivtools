@@ -44,8 +44,9 @@ class IV_File:
         self.current_chan = current_channel
         # Check for required channels
         chans = []
-        for chan in self.tdms_file[self.grp_names[-1]].channels():
-            chans.append(chan.name)
+        for grp in self.grp_names:
+            for chan in self.tdms_file[grp].channels():
+                chans.append(chan.name)
         if ppms_field is None:
             required_channels = {voltage_channel, current_channel, 'Field'}
         else:
@@ -105,7 +106,7 @@ class IV_File:
             - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
             The field needs to be upsampled.
         '''
-        group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else self.grp_names[0]] # Our TDMS files have only one group.
+        group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else 'p'] # Our TDMS files have only one group.
         channel=group[selection]
         c = self._parse_config(channel)
         data = channel.data
