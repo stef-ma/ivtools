@@ -105,7 +105,7 @@ class IV_File:
             - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
             The field needs to be upsampled.
         '''
-        group = self.tdms_file[self.grp_names[-1]] # Our TDMS files have only one group.
+        group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else self.grp_names[0]] # Our TDMS files have only one group.
         channel=group[selection]
         c = self._parse_config(channel)
         data = channel.data
