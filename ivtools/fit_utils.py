@@ -669,7 +669,12 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
     y = np.asarray(y)
 
     # --- basic sanity masking ---
-    mask = (x != 0) & (y != 0)
+    mask = (
+    (x != 0) &
+    (y != 0) &
+    np.isfinite(x) &
+    np.isfinite(y)
+    )
     x0 = x[mask]
     y0 = y[mask]
 
