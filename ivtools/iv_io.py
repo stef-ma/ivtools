@@ -15,307 +15,259 @@ import os
 import warnings
 
 class IV_File:
-    def __init__(
-            self,
-            filepath,
-            calibrated_resistor,
-            temperature,
-            gain_V=1,
-            gain_I=1,
-            voltage_channel='V',
-            current_channel='I',
-            ppms_field=None
-        ):
-        # Read the TDMS file and initialize attributes
-        self.tdms_file = nptdms.TdmsFile.read(filepath)
+    """
+    Container and parser for TDMS-based IV pulse measurements.
 
-        # Remember the V and I channel names
+    Responsibilities:
+    - Validate channel presence
+    - Load and resample time-aligned channels
+    - Parse embedded TDMS configuration metadata
+    - Extract IV pulse timing (Pnum-derived)
+    - Compute basic noise metrics
+
+    This class is intentionally stateful: once constructed, all
+    downstream processing should rely only on stored attributes.
+    """
+
+    # ------------------------------------------------------------------
+    # Construction / validation
+    # ------------------------------------------------------------------
+    def __init__(
+        self,
+        filepath,
+        calibrated_resistor,
+        temperature,
+        gain_V=1,
+        gain_I=1,
+        voltage_channel='V',
+        current_channel='I',
+        ppms_field=None,
+    ):
+        # --- Load TDMS file ---
+        self.tdms_file = nptdms.TdmsFile.read(filepath)
+        self.path = Path(filepath)
+
+        # Channel names
         self.vchan = voltage_channel
         self.ichan = current_channel
 
-        self.grp_names = []
-        for grp in self.tdms_file.groups():
-            self.grp_names.append(grp.name)
+        # --- Discover groups and channels ---
+        self.grp_names = [grp.name for grp in self.tdms_file.groups()]
 
-        self.path = Path(filepath)
-        self.current_chan = current_channel
-        # Check for required channels
-        chans = []
+        all_channels = []
         for grp in self.grp_names:
             for chan in self.tdms_file[grp].channels():
-                chans.append(chan.name)
+                all_channels.append(chan.name)
+
+        # --- Required channel check ---
         if ppms_field is None:
             required_channels = {voltage_channel, current_channel, 'Field'}
         else:
             required_channels = {voltage_channel, current_channel}
-        missing = required_channels - set(chans)
+
+        missing = required_channels - set(all_channels)
         if missing:
             self.passed = False
             print(f'[Error] File {filepath} is missing channels: {missing}.')
-        else:
-            # If all required channels are present, load the data
-            self.passed = True
-            self.start_time = None
+            return
 
-            for grp in self.grp_names:
-                for chan in self.tdms_file[grp]:
-                    c = self._parse_config(self.tdms_file[grp][chan])
-                    chan_start = c['wf_start_time']#.astype('datetime64[ns]').astype('int64')/1e9
-                    if self.start_time is None:
-                        self.start_time=chan_start 
-                    if chan_start<self.start_time:
-                        self.start_time=chan_start
+        self.passed = True
 
+        # ------------------------------------------------------------------
+        # Establish a common reference start time across all channels
+        # ------------------------------------------------------------------
+        self.start_time = None
+        for grp in self.grp_names:
+            for chan in self.tdms_file[grp]:
+                cfg = self._parse_config(self.tdms_file[grp][chan])
+                chan_start = cfg['wf_start_time']
+                if self.start_time is None or chan_start < self.start_time:
+                    self.start_time = chan_start
 
-            # self.start_time = None
-            # for grp in self.grp_names:
-            #     for ch in self.tdms_file[grp].channels():
-            #         try:
-            #             t = ch.time_track(absolute_time=True)
-            #         except:
-            #             continue
-            #         if len(t) == 0:
-            #             continue
-            #         t0 = t[0]
-            #         if self.start_time is None or t0 < self.start_time:
-            #             self.start_time = t0
+        # ------------------------------------------------------------------
+        # Load core channels (I, V, B)
+        # ------------------------------------------------------------------
+        # Current
+        self.I, _, _, _ = self._load_channel_data(current_channel)
+        self.I = self.I / gain_I
+        self.I = self.I / calibrated_resistor  # V -> I conversion
 
-            self.I, _, _, _=self._load_channel_data(current_channel)
-            self.I = self.I/gain_I
-            self.I = self.I/calibrated_resistor # Converting the measured voltage drop to current.
-            self.V, self.t, self.configuration, _ =self._load_channel_data(voltage_channel)
-            self.V = self.V/gain_V
-            
-            if ppms_field is None: # For files with field channel
-                try:
-                    self.B, _, _, _=self._load_channel_data('Field_fixed')
-                except:
-                    print(f'No Field_fixed found in {filepath}, using Field')
-                    self.B, _, _, _=self._load_channel_data('Field') #TODO: Should be Field_fixed?
-            elif isinstance(ppms_field, float) or isinstance(ppms_field,int): # For files without field channel but with a constant field value
-                self.B = np.round(np.ones(len(self.I))*ppms_field,2)
-            else:
-                self.passed = False
-                print(f'[Error] File {filepath} is missing channels field value.')
-                                            
-            # Record indices of troths and tops
-            self.troths, self.tops = self._find_Pnum_indices()
+        # Voltage (defines master time axis)
+        self.V, self.t, self.configuration, _ = self._load_channel_data(voltage_channel)
+        self.V = self.V / gain_V
 
-            # Record Vavg and Pnum
-            self.Vavg, self.t_Vavg, _, _=self._load_channel_data('Vavg')
-            self.Pnum, self.t_Pnum, _, _ = self._load_channel_data('Pnum')
-            self.Vavg = self.Vavg/gain_V
-
-            # Record noise levels
-            idx = int(len(self.V)*.99)
-            self.baseline_region = self.V[idx:]
-            self.baseline_mean = np.mean(self.baseline_region)
-            self.noise_std = np.std(self.baseline_region)
-            self.noise_rms = np.sqrt(np.mean(self.baseline_region**2))
-
-
-            # Record temperature
+        # Magnetic field
+        if ppms_field is None:
             try:
-                self.T = float(temperature)
-            except:
-                self.T = temperature
+                self.B, _, _, _ = self._load_channel_data('Field_fixed')
+            except Exception:
+                print(f'No Field_fixed found in {filepath}, using Field')
+                self.B, _, _, _ = self._load_channel_data('Field')
+        elif isinstance(ppms_field, (int, float)):
+            self.B = np.round(np.ones(len(self.I)) * ppms_field, 2)
+        else:
+            self.passed = False
+            print(f'[Error] File {filepath} is missing channels field value.')
+            return
 
-            # self.t -= self.t[0]
-    def _load_channel_data(self,selection): # With datetime start time
-        '''
-        Loads a channel from the p group of the TDMS file. Special treatments:
-            - Pnum is a smaller array only noting the times at which IV pulses are applied. We only use it to get the 
-            relevant indices
-            - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
-            The field needs to be upsampled.
-        '''
-        group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else 'p'] # Our TDMS files have only one group.
-        channel=group[selection]
-        c = self._parse_config(channel)
+        # ------------------------------------------------------------------
+        # Pulse timing (Pnum)
+        # ------------------------------------------------------------------
+        self.troths, self.tops = self._find_Pnum_indices()
+
+        # Load auxiliary pulse channels
+        self.Vavg, self.t_Vavg, _, _ = self._load_channel_data('Vavg')
+        self.Pnum, self.t_Pnum, _, _ = self._load_channel_data('Pnum')
+        self.Vavg = self.Vavg / gain_V
+
+        # ------------------------------------------------------------------
+        # Noise metrics (tail of voltage trace)
+        # ------------------------------------------------------------------
+        idx = int(len(self.V) * 0.99)
+        self.baseline_region = self.V[idx:]
+        self.baseline_mean = np.mean(self.baseline_region)
+        self.noise_std = np.std(self.baseline_region)
+        self.noise_rms = np.sqrt(np.mean(self.baseline_region ** 2))
+
+        # ------------------------------------------------------------------
+        # Temperature
+        # ------------------------------------------------------------------
+        try:
+            self.T = float(temperature)
+        except Exception:
+            self.T = temperature
+
+    # ------------------------------------------------------------------
+    # Channel loading
+    # ------------------------------------------------------------------
+    def _load_channel_data(self, selection):
+        """
+        Load a TDMS channel and return data, time array, configuration, and channel handle.
+
+        Special cases:
+        - Field / Field_fixed are resampled onto the voltage time axis
+        - Pnum and Vavg are sparse pulse-timing channels
+        """
+        # Field channels live in group 'p', everything else in the last group
+        group_name = 'p' if selection in ['Field', 'Field_fixed'] else self.grp_names[-1]
+        group = self.tdms_file[group_name]
+        channel = group[selection]
+
+        config = self._parse_config(channel)
         data = channel.data
-        # time_array = channel.time_track(absolute_time=True)
-        # time_array = self._to_seconds(time_array)
         time_array = channel.time_track()
 
-
-
-
-        if selection in ['Field','Field_fixed']:
+        # Resample field to match voltage time axis
+        if selection in ['Field', 'Field_fixed']:
             data_time = self.t
             interp_func = interp1d(time_array, data, kind='linear', fill_value="extrapolate")
-            data = interp_func(data_time)  # Resampling the data.
-            time_array = data_time # Taking the correct time.
-        
+            data = interp_func(data_time)
+            time_array = data_time
 
-        return data, time_array, c, channel
-    
-    # def _to_seconds(self, t):
-    #     return (t-self.start_time).astype("timedelta64[ns]").astype(np.float64) * 1e-9
-        # return (t-0).astype("timedelta64[ns]").astype(np.float64) * 1e-9
+        return data, time_array, config, channel
 
+    # ------------------------------------------------------------------
+    # TDMS configuration parsing
+    # ------------------------------------------------------------------
+    def _parse_config(self, channel):
+        """
+        Parse the TDMS 'Configuration' string into a nested dictionary.
 
-    def _parse_config(self,channel):
-        '''
-        Parsing algorithm for the configuration data contained in the TDMS. Mostly regex to reject the useless information.
-        Extracts and converts the numerical values. The key "I-V parameters" is its own dictionary.
-        '''
-        configuration_dict=dict()
-        if channel.name in ['Field','Field_fixed']:
-            channel.properties['Configuration'] = self.tdms_file['p']['Bdot'].properties['Configuration'] 
-        
-        config = channel.properties['Configuration']
-        parsed_config = config.splitlines()
-        for i,line in enumerate(parsed_config[1:]):
-            # print(i,line)
-            splits = re.split('\.',line)
-            numeric = re.split('"',line)[-2]
+        - Numeric values are cast when possible
+        - 'I-V parameters' style blocks become sub-dictionaries
+        - Timing metadata is normalized across channels
+        """
+        configuration_dict = {}
+
+        # Field channels inherit config from Bdot
+        if channel.name in ['Field', 'Field_fixed']:
+            channel.properties['Configuration'] = (
+                self.tdms_file['p']['Bdot'].properties['Configuration']
+            )
+
+        config_text = channel.properties['Configuration']
+        lines = config_text.splitlines()
+
+        for line in lines[1:]:
+            splits = re.split('\.', line)
+
             try:
-                numeric=float(numeric)
-            except:
-                pass
-            if 'Re-name chans' in splits[1] or 'Ranges' in splits[1]:
-                pass
-            else:
-                if ' = ' not in splits[1]:
-                    category = splits[1]
-                    if category not in configuration_dict.keys():
-                        configuration_dict[category]=dict()
-                        category2 = re.split(' = ',splits[2])[0]
-                        if category not in configuration_dict[category].keys():
-                            # print(f'Inner category saved: {category2}') 
-                            configuration_dict[category][category2]=numeric
-                    else:
-                        category2 = re.split(' = ',splits[2])[0]
-                        if category not in configuration_dict[category].keys():
-                            # print(f'Inner category saved: {category2}') 
-                            configuration_dict[category][category2]=numeric
-                else:
-                    category = re.split(' = ',splits[1])[0]
-                    if category not in configuration_dict.keys():
-                        # print(f'Outer category saved: {category}')
-                        configuration_dict[category]=numeric
+                numeric = float(re.split('"', line)[-2])
+            except Exception:
+                numeric = re.split('"', line)[-2]
 
-        
-        configuration_dict['wf_start_offset'] = configuration_dict['Post-trigger delay'] if channel.name not in ['Vavg','Pnum'] else configuration_dict['Output delay']
-        channel.properties['wf_start_offset'] = configuration_dict['wf_start_offset']     
-        configuration_dict['wf_increment']=channel.properties['wf_increment']
-        configuration_dict['wf_start_time']=channel.properties['wf_start_time']
+            if 'Re-name chans' in splits[1] or 'Ranges' in splits[1]:
+                continue
+
+            if ' = ' not in splits[1]:
+                category = splits[1]
+                configuration_dict.setdefault(category, {})
+                subkey = re.split(' = ', splits[2])[0]
+                configuration_dict[category][subkey] = numeric
+            else:
+                key = re.split(' = ', splits[1])[0]
+                configuration_dict[key] = numeric
+
+        # Normalize waveform timing
+        configuration_dict['wf_start_offset'] = (
+            configuration_dict['Post-trigger delay']
+            if channel.name not in ['Vavg', 'Pnum']
+            else configuration_dict['Output delay']
+        )
+
+        channel.properties['wf_start_offset'] = configuration_dict['wf_start_offset']
+        configuration_dict['wf_increment'] = channel.properties['wf_increment']
+        configuration_dict['wf_start_time'] = channel.properties['wf_start_time']
+
         return configuration_dict
 
+    # ------------------------------------------------------------------
+    # Pulse edge detection
+    # ------------------------------------------------------------------
     def _find_Pnum_indices(self):
         """
-        Determine the index positions of IV pulse edges using the Pnum channel.
+        Determine IV pulse edges using the Pnum timing channel.
 
         Returns:
-            lows (np.ndarray): Interleaved array of indices marking rising and falling edges.
-            highs (np.ndarray): Estimated midpoints of pulse regions.
+            troths : np.ndarray
+                Interleaved left/right pulse edge indices
+            tops : np.ndarray
+                Midpoints of pulse regions
         """
-        # Load Pnum pulse times and the common data time array
         _, Pnum_time, _, _ = self._load_channel_data('Pnum')
-        _, data_time, _, _ = self._load_channel_data(self.current_chan)
+        _, data_time, _, _ = self._load_channel_data(self.ichan)
 
         n = len(Pnum_time)
         if n == 0:
-            # No pulses at all
             return np.array([], dtype=int), np.array([], dtype=int)
 
-        # Map each Pnum_time to nearest insertion point in data_time
         left_idx = np.searchsorted(data_time, Pnum_time)
         left_idx = np.clip(left_idx, 0, len(data_time) - 1)
 
         if n == 1:
-            # Only one pulse time — assume a minimal duration
-            # Here we define a short artificial right edge
-            right_idx = np.array([min(left_idx[0] + 10, len(data_time) - 1)], dtype=int)
-            lows = np.array([left_idx[0], right_idx[0]], dtype=int)
-            highs = np.array([(left_idx[0] + right_idx[0]) // 2], dtype=int)
+            right_idx = np.array([
+                min(left_idx[0] + 10, len(data_time) - 1)
+            ])
+            lows = np.array([left_idx[0], right_idx[0]])
+            highs = np.array([(left_idx[0] + right_idx[0]) // 2])
             return lows, highs
 
-        # For normal multi-pulse case
         right_idx = np.roll(left_idx, -1)
-        # Extrapolate final right edge safely
-        extrapolated = right_idx[-2] + (right_idx[-2] - right_idx[-3]) if n > 2 else left_idx[-1] + 10
+        extrapolated = (
+            right_idx[-2] + (right_idx[-2] - right_idx[-3])
+            if n > 2
+            else left_idx[-1] + 10
+        )
         right_idx[-1] = min(len(data_time) - 1, extrapolated)
 
-        # Interleave left/right for 'lows'
         lows = np.empty(left_idx.size + right_idx.size, dtype=int)
         lows[0::2] = left_idx
         lows[1::2] = right_idx
 
-        # Estimate pulse tops as midpoints of rising/falling edge pairs
-        pulse_durations = np.diff(lows)[::2]  # get only left-to-right gaps
-        highs = left_idx + pulse_durations // 2  # integer midpoint
+        pulse_durations = np.diff(lows)[::2]
+        highs = left_idx + pulse_durations // 2
 
         return lows, highs
-
-
-                 
-    # def _load_channel_data(self,selection): # With datetime start time
-    #     '''
-    #     Loads a channel from the p group of the TDMS file. Special treatments:
-    #         - Pnum is a smaller array only noting the times at which IV pulses are applied. We only use it to get the 
-    #         relevant indices
-    #         - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
-    #         The field needs to be upsampled.
-    #     '''
-    #     group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else 'p'] # Our TDMS files have only one group.
-    #     channel=group[selection]
-    #     c = self._parse_config(channel)
-    #     data = channel.data
-    #     if selection not in ['Pnum','Vavg','Field','Field_fixed']:
-    #         time_array = np.arange(len(data))*c['wf_increment']+c['Post-trigger delay']
-    #     elif selection in ['Pnum','Vavg']:
-    #         time_array = np.arange(len(data))*c['wf_increment']+c['Output delay']#+c['wf_increment']/4
-    #         # time_array = np.arange(len(data))*c['wf_increment']+c['Post-trigger delay']#+c['wf_increment']/4
-    #     else: # Resample the field
-    #         time_array = np.arange(len(data))*c['wf_increment']
-    #         _,data_time,data_c,_=self._load_channel_data(self.current_chan) # Can also be V, or other channels from the Pitaya. EXCEPT Pnum!
-    #         # start_time_difference = data_c['wf_start_time'] - c['wf_start_time'] # TODO: FIgure out why this is not needed anymore???
-    #         # start_time_difference = np.timedelta64(start_time_difference,'ns')
-    #         # self.start_time_difference = start_time_difference
-    #         # print(start_time_difference)
-    #         # time_array = time_array + start_time_difference.astype(np.float64)/1e9  # Adjusting the time array to match the start time of the data.
-    #         # data_time = time_array + start_time_difference.astype(np.float64)/1e9  # Adjusting the time array to match the start time of the data.
-    #         interp_func = interp1d(time_array, data, kind='linear', fill_value="extrapolate")
-    #         data = interp_func(data_time)  # Resampling the data.
-    #         time_array = data_time # Taking the correct time.
-
-    #         # print(selection,c['wf_start_time'],start_time_difference.astype(int)/1e6)
-    #     return data, time_array, c, channel
-                 
-    # def _load_channel_data(self,selection): # With datetime start time
-    #     '''
-    #     Loads a channel from the p group of the TDMS file. Special treatments:
-    #         - Pnum is a smaller array only noting the times at which IV pulses are applied. We only use it to get the 
-    #         relevant indices
-    #         - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
-    #         The field needs to be upsampled.
-    #     '''
-    #     group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else 'p'] # Our TDMS files have only one group.
-    #     channel=group[selection]
-    #     c = self._parse_config(channel)
-    #     data = channel.data
-
-    #     chan_start = c['wf_start_time'].astype('datetime64[ns]').astype('int64')/1e9
-    #     inc = c['wf_increment']
-
-    #     if selection not in ['Field','Field_fixed']:
-    #         delay = c['Post-trigger delay'] if selection not in ['Vavg','Pnum'] else c['Output delay']
-    #     else:
-    #         delay = 0
-    #     # delay = 0
-    #     tstart = chan_start - self.start_time
-    #     # tstart = chan_start
-    #     time_array = np.arange(len(data))*inc + tstart
-    #     time_array += delay 
-        
-    #     if selection in ['Field','Field_fixed']:
-    #         _,data_time,_,_=self._load_channel_data(self.current_chan) # Can also be V, or other channels from the Pitaya. EXCEPT Pnum!
-    #         interp_func = interp1d(time_array, data, kind='linear', fill_value="extrapolate")
-    #         data = interp_func(data_time)  # Resampling the data.
-    #         time_array = data_time # Taking the correct time.
-    #     return data, time_array, c, channel 
-     
 
 def extract_numeric_temperature(temp):
     """
