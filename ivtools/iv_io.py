@@ -511,6 +511,7 @@ def save_ivdata(
     output_base = f"IV_{temperature}K_{tfield}T_{orientation}deg_{fname}"
     if origin:
         output_base = output_base + '_OriginReadable'
+    output_base.replace(".","p")
     raw_path = base_path / f"{output_base}_ivs.csv"
     header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
@@ -604,6 +605,7 @@ def save_fitdata(
     output_base = f"IcH_{temperature}K_{tfield}T_{orientation}deg_{fname}"
     if origin:
         output_base = output_base + '_OriginReadable'
+    output_base.replace(".","p")
     fit_path = base_path / f"{output_base}_fit.csv"
     header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
