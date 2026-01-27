@@ -14,13 +14,6 @@ from scipy.interpolate import interp1d
 import os
 import warnings
 
-# import nptdms
-# from pathlib import Path
-# import numpy as np
-# import re
-# from scipy.interpolate import interp1d
-# import MultiPyVu as mpv
-
 class IV_File:
     def __init__(
             self,
@@ -35,6 +28,10 @@ class IV_File:
         ):
         # Read the TDMS file and initialize attributes
         self.tdms_file = nptdms.TdmsFile.read(filepath)
+
+        # Remember the V and I channel names
+        self.vchan = voltage_channel
+        self.ichan = current_channel
 
         self.grp_names = []
         for grp in self.tdms_file.groups():
@@ -58,6 +55,31 @@ class IV_File:
         else:
             # If all required channels are present, load the data
             self.passed = True
+            self.start_time = None
+
+            for grp in self.grp_names:
+                for chan in self.tdms_file[grp]:
+                    c = self._parse_config(self.tdms_file[grp][chan])
+                    chan_start = c['wf_start_time']#.astype('datetime64[ns]').astype('int64')/1e9
+                    if self.start_time is None:
+                        self.start_time=chan_start 
+                    if chan_start<self.start_time:
+                        self.start_time=chan_start
+
+
+            # self.start_time = None
+            # for grp in self.grp_names:
+            #     for ch in self.tdms_file[grp].channels():
+            #         try:
+            #             t = ch.time_track(absolute_time=True)
+            #         except:
+            #             continue
+            #         if len(t) == 0:
+            #             continue
+            #         t0 = t[0]
+            #         if self.start_time is None or t0 < self.start_time:
+            #             self.start_time = t0
+
             self.I, _, _, _=self._load_channel_data(current_channel)
             self.I = self.I/gain_I
             self.I = self.I/calibrated_resistor # Converting the measured voltage drop to current.
@@ -97,7 +119,8 @@ class IV_File:
                 self.T = float(temperature)
             except:
                 self.T = temperature
-                 
+
+            # self.t -= self.t[0]
     def _load_channel_data(self,selection): # With datetime start time
         '''
         Loads a channel from the p group of the TDMS file. Special treatments:
@@ -110,24 +133,26 @@ class IV_File:
         channel=group[selection]
         c = self._parse_config(channel)
         data = channel.data
-        if selection not in ['Pnum','Vavg','Field','Field_fixed']:
-            time_array = np.arange(len(data))*c['wf_increment']+c['Post-trigger delay']
-        elif selection == 'Pnum':
-            time_array = np.arange(len(data))*c['wf_increment']+c['Output delay']#+c['wf_increment']/4
-        elif selection == 'Vavg':
-            time_array = np.arange(len(data))*c['wf_increment']+c['Output delay']#+c['wf_increment']/4
-        else: # Resample the field
-            time_array = np.arange(len(data))*c['wf_increment']
-            _,data_time,data_c,_=self._load_channel_data(self.current_chan) # Can also be V, or other channels from the Pitaya. EXCEPT Pnum!
-            # start_time_difference = c['wf_start_time'] - data_c['wf_start_time'] # TODO: FIgure out why this is not needed anymore???
-            # print(start_time_difference/1000)
-            # time_array = time_array + start_time_difference.astype(int)/1e6  # Adjusting the time array to match the start time of the data.
+        # time_array = channel.time_track(absolute_time=True)
+        # time_array = self._to_seconds(time_array)
+        time_array = channel.time_track()
+
+
+
+
+        if selection in ['Field','Field_fixed']:
+            data_time = self.t
             interp_func = interp1d(time_array, data, kind='linear', fill_value="extrapolate")
             data = interp_func(data_time)  # Resampling the data.
             time_array = data_time # Taking the correct time.
+        
 
-            # print(selection,c['wf_start_time'],start_time_difference.astype(int)/1e6)
         return data, time_array, c, channel
+    
+    # def _to_seconds(self, t):
+    #     return (t-self.start_time).astype("timedelta64[ns]").astype(np.float64) * 1e-9
+        # return (t-0).astype("timedelta64[ns]").astype(np.float64) * 1e-9
+
 
     def _parse_config(self,channel):
         '''
@@ -135,38 +160,44 @@ class IV_File:
         Extracts and converts the numerical values. The key "I-V parameters" is its own dictionary.
         '''
         configuration_dict=dict()
-        if channel.name != 'Field' and channel.name!='Field_fixed':
-            config = channel.properties['Configuration']
-            parsed_config = config.splitlines()
-            for i,line in enumerate(parsed_config[1:]):
-                # print(i,line)
-                splits = re.split('\.',line)
-                numeric = re.split('"',line)[-2]
-                try:
-                    numeric=float(numeric)
-                except:
-                    pass
-                if 'Re-name chans' in splits[1] or 'Ranges' in splits[1]:
-                    pass
-                else:
-                    if ' = ' not in splits[1]:
-                        category = splits[1]
-                        if category not in configuration_dict.keys():
-                            configuration_dict[category]=dict()
-                            category2 = re.split(' = ',splits[2])[0]
-                            if category not in configuration_dict[category].keys():
-                                # print(f'Inner category saved: {category2}') 
-                                configuration_dict[category][category2]=numeric
-                        else:
-                            category2 = re.split(' = ',splits[2])[0]
-                            if category not in configuration_dict[category].keys():
-                                # print(f'Inner category saved: {category2}') 
-                                configuration_dict[category][category2]=numeric
+        if channel.name in ['Field','Field_fixed']:
+            channel.properties['Configuration'] = self.tdms_file['p']['Bdot'].properties['Configuration'] 
+        
+        config = channel.properties['Configuration']
+        parsed_config = config.splitlines()
+        for i,line in enumerate(parsed_config[1:]):
+            # print(i,line)
+            splits = re.split('\.',line)
+            numeric = re.split('"',line)[-2]
+            try:
+                numeric=float(numeric)
+            except:
+                pass
+            if 'Re-name chans' in splits[1] or 'Ranges' in splits[1]:
+                pass
+            else:
+                if ' = ' not in splits[1]:
+                    category = splits[1]
+                    if category not in configuration_dict.keys():
+                        configuration_dict[category]=dict()
+                        category2 = re.split(' = ',splits[2])[0]
+                        if category not in configuration_dict[category].keys():
+                            # print(f'Inner category saved: {category2}') 
+                            configuration_dict[category][category2]=numeric
                     else:
-                        category = re.split(' = ',splits[1])[0]
-                        if category not in configuration_dict.keys():
-                            # print(f'Outer category saved: {category}')
-                            configuration_dict[category]=numeric
+                        category2 = re.split(' = ',splits[2])[0]
+                        if category not in configuration_dict[category].keys():
+                            # print(f'Inner category saved: {category2}') 
+                            configuration_dict[category][category2]=numeric
+                else:
+                    category = re.split(' = ',splits[1])[0]
+                    if category not in configuration_dict.keys():
+                        # print(f'Outer category saved: {category}')
+                        configuration_dict[category]=numeric
+
+        
+        configuration_dict['wf_start_offset'] = configuration_dict['Post-trigger delay'] if channel.name not in ['Vavg','Pnum'] else configuration_dict['Output delay']
+        channel.properties['wf_start_offset'] = configuration_dict['wf_start_offset']     
         configuration_dict['wf_increment']=channel.properties['wf_increment']
         configuration_dict['wf_start_time']=channel.properties['wf_start_time']
         return configuration_dict
@@ -218,6 +249,73 @@ class IV_File:
         return lows, highs
 
 
+                 
+    # def _load_channel_data(self,selection): # With datetime start time
+    #     '''
+    #     Loads a channel from the p group of the TDMS file. Special treatments:
+    #         - Pnum is a smaller array only noting the times at which IV pulses are applied. We only use it to get the 
+    #         relevant indices
+    #         - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
+    #         The field needs to be upsampled.
+    #     '''
+    #     group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else 'p'] # Our TDMS files have only one group.
+    #     channel=group[selection]
+    #     c = self._parse_config(channel)
+    #     data = channel.data
+    #     if selection not in ['Pnum','Vavg','Field','Field_fixed']:
+    #         time_array = np.arange(len(data))*c['wf_increment']+c['Post-trigger delay']
+    #     elif selection in ['Pnum','Vavg']:
+    #         time_array = np.arange(len(data))*c['wf_increment']+c['Output delay']#+c['wf_increment']/4
+    #         # time_array = np.arange(len(data))*c['wf_increment']+c['Post-trigger delay']#+c['wf_increment']/4
+    #     else: # Resample the field
+    #         time_array = np.arange(len(data))*c['wf_increment']
+    #         _,data_time,data_c,_=self._load_channel_data(self.current_chan) # Can also be V, or other channels from the Pitaya. EXCEPT Pnum!
+    #         # start_time_difference = data_c['wf_start_time'] - c['wf_start_time'] # TODO: FIgure out why this is not needed anymore???
+    #         # start_time_difference = np.timedelta64(start_time_difference,'ns')
+    #         # self.start_time_difference = start_time_difference
+    #         # print(start_time_difference)
+    #         # time_array = time_array + start_time_difference.astype(np.float64)/1e9  # Adjusting the time array to match the start time of the data.
+    #         # data_time = time_array + start_time_difference.astype(np.float64)/1e9  # Adjusting the time array to match the start time of the data.
+    #         interp_func = interp1d(time_array, data, kind='linear', fill_value="extrapolate")
+    #         data = interp_func(data_time)  # Resampling the data.
+    #         time_array = data_time # Taking the correct time.
+
+    #         # print(selection,c['wf_start_time'],start_time_difference.astype(int)/1e6)
+    #     return data, time_array, c, channel
+                 
+    # def _load_channel_data(self,selection): # With datetime start time
+    #     '''
+    #     Loads a channel from the p group of the TDMS file. Special treatments:
+    #         - Pnum is a smaller array only noting the times at which IV pulses are applied. We only use it to get the 
+    #         relevant indices
+    #         - Field is sampled at the National Instruments DAQ which has a different sampling rate than the Red Pitaya.
+    #         The field needs to be upsampled.
+    #     '''
+    #     group = self.tdms_file[self.grp_names[-1] if selection not in ['Field','Field_fixed'] else 'p'] # Our TDMS files have only one group.
+    #     channel=group[selection]
+    #     c = self._parse_config(channel)
+    #     data = channel.data
+
+    #     chan_start = c['wf_start_time'].astype('datetime64[ns]').astype('int64')/1e9
+    #     inc = c['wf_increment']
+
+    #     if selection not in ['Field','Field_fixed']:
+    #         delay = c['Post-trigger delay'] if selection not in ['Vavg','Pnum'] else c['Output delay']
+    #     else:
+    #         delay = 0
+    #     # delay = 0
+    #     tstart = chan_start - self.start_time
+    #     # tstart = chan_start
+    #     time_array = np.arange(len(data))*inc + tstart
+    #     time_array += delay 
+        
+    #     if selection in ['Field','Field_fixed']:
+    #         _,data_time,_,_=self._load_channel_data(self.current_chan) # Can also be V, or other channels from the Pitaya. EXCEPT Pnum!
+    #         interp_func = interp1d(time_array, data, kind='linear', fill_value="extrapolate")
+    #         data = interp_func(data_time)  # Resampling the data.
+    #         time_array = data_time # Taking the correct time.
+    #     return data, time_array, c, channel 
+     
 
 def extract_numeric_temperature(temp):
     """
@@ -236,88 +334,6 @@ def extract_numeric_temperature(temp):
         if match:
             return float(match.group())
     return None
-
-# def save_ivdata_for_Origin(raw_df,fname,base_path,sample,orientation,magnet,tfield,temperature,fnames=False,verbose=False):
-
-#     output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-
-#     raw_path = base_path / f"{output_base}_OriginReadable_raw.csv"
-
-
-
-#     #Origin Reformatting
-#     with open(raw_path, 'w') as f:
-#         header = f'{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}'
-#         f.write(f'# {header}\n')
-#         f.write(f'I,V,Uncorrected V\-(avg),Processed Voltage,\g(m)\-(0)H,dH/dt,Pulse idx,t\n' if not fnames else f'I,V,Uncorrected V\-(avg),Processed Voltage,\g(m)\-(0)H,dH/dt,Pulse idx,t,File\n')
-#         f.write(f'A,V,V,V,T,T/s, ,s, \n' if not fnames else f'A,V,V,V,T,T/s, ,s, , \n')
-#         f.write(f'{header},{header},{header},{header},{header},{header},{header},{header}\n' if not fnames else f'{header},{header},{header},{header},{header},{header},{header},{header},{header}\n')
-
-    
-#     raw_df['Current_A'] = raw_df['Current [A]']
-#     raw_df['Voltage_V'] = raw_df['Voltage [V]']
-#     raw_df['Vavg_V'] = raw_df['Vavg [V]']
-#     raw_df['Processed_Voltage_V'] = raw_df['Processed Voltage [V]'] if 'Processed Voltage [V]' in raw_df.columns else np.nan 
-#     raw_df['Field_T'] = raw_df['Field [T]']
-#     raw_df['dBdt'] = raw_df['dBdt [T/s]']
-#     raw_df['pdx'] = raw_df['IV_Index']
-#     raw_df['time_s'] = raw_df['Time [s]']
-#     raw_df['fnames'] = raw_df['File']
-
-
-#     if not fnames:
-#         raw_df = raw_df[['Current_A','Voltage_V','Vavg_V', 'Processed_Voltage_V','Field_T','dBdt','pdx','time_s']]
-#     else:
-#         raw_df = raw_df[['Current_A','Voltage_V','Vavg_V', 'Processed_Voltage_V','Field_T','dBdt','pdx','time_s','fnames']]
-    
-
-#     raw_df.to_csv(raw_path, mode='a', sep=',', header=False, index=False)
-#     if verbose:
-#         print(f'Saved fit results to: {raw_path}')
-
-# def save_fitdata_for_Origin(fit_df,fname,base_path,sample,orientation,magnet,tfield,temperature,fnames=False,verbose=False,cross_section=None,width=None):
-        
-#     output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-
-#     fit_path = base_path/ f"{output_base}_OriginReadable_fit.csv"
-
-#     #Origin Reformatting
-#     with open(fit_path, 'w') as f:
-#         header = f'{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}'
-#         f.write(f'# {header}\n')
-#         f.write(f'\g(m)\-(0)H,I\-(c),I\-(c) (dH/dt>0),I\-(c) (dH/dt<=0),I\-(cpw),J\-(c),k,n,n (dH/dt>0),n (dH/dt<=0),Pulse idx,Fit start idx,Fit end idx\n' if not fnames else f'\g(m)\-(0)H,I\-(c),I\-(c) (dH/dt>0),I\-(c) (dH/dt<=0),I\-(cpw),J\-(c),k,n,n (dH/dt>0),n (dH/dt<=0),Pulse idx,Fit start idx,Fit end idx,File\n')
-#         f.write(f'T,A,A,A,A/cm-w,MA/cm\+(2), , , , , \n' if not fnames else f'T,A,A,A,A/cm-w,MA/cm\+(2), , , , , , \n')
-#         f.write(f'{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header}\n' if not fnames else f'{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header},{header}\n')
-    
-
-
-#     fit_df['Field_T'] = fit_df['Avg Field [T]']
-#     fit_df['I_c_A'] = fit_df['I_c']
-#     fit_df['I_c_A_pos_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']>0]['I_c']
-#     fit_df['I_c_A_neg_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']<=0]['I_c']
-#     fit_df['I_cpw_Acmw'] = fit_df['I_c']/width if width else np.nan
-#     fit_df['J_c_MAcm2'] = fit_df['I_c']/cross_section/1e6 if cross_section else np.nan
-#     fit_df['n'] = fit_df['n']
-#     fit_df['n_pos_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']>0]['n']
-#     fit_df['n_neg_dBdt'] = fit_df[fit_df['Avg dB/dt [T/s]']<=0]['n']
-#     fit_df['k'] = fit_df['k']
-#     fit_df['pdx'] = fit_df['IV_Index']
-#     fit_df['fit_start_idx'] = fit_df['fit_start_index']
-#     fit_df['fit_end_idx'] = fit_df['fit_end_index']
-#     fit_df['fnames'] = fit_df['File']
-
-
-#     if not fnames:
-#         fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx']]
-#     else:
-#         fit_df = fit_df[['Field_T','I_c_A','I_c_A_pos_dBdt','I_c_A_neg_dBdt','I_cpw_Acmw','J_c_MAcm2','k','n','n_pos_dBdt','n_neg_dBdt','pdx','fit_start_idx','fit_end_idx','fnames']]
-
-#     fit_df.to_csv(fit_path, header=False, mode='a', sep=',', index=False)
-
-#     if verbose:
-#         print(f'Saved fit results to: {fit_path}')
-
-
 
 # -----------------------
 # Column metadata
