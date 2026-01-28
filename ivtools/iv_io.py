@@ -73,16 +73,16 @@ class IV_File:
 
         self.passed = True
 
-        # ------------------------------------------------------------------
-        # Establish a common reference start time across all channels
-        # ------------------------------------------------------------------
-        self.start_time = None
-        for grp in self.grp_names:
-            for chan in self.tdms_file[grp]:
-                cfg = self._parse_config(self.tdms_file[grp][chan])
-                chan_start = cfg['wf_start_time']
-                if self.start_time is None or chan_start < self.start_time:
-                    self.start_time = chan_start
+        # # ------------------------------------------------------------------
+        # # Establish a common reference start time across all channels
+        # # ------------------------------------------------------------------
+        # self.start_time = None
+        # for grp in self.grp_names:
+        #     for chan in self.tdms_file[grp]:
+        #         cfg = self._parse_config(self.tdms_file[grp][chan])
+        #         chan_start = cfg['wf_start_time']
+        #         if self.start_time is None or chan_start < self.start_time:
+        #             self.start_time = chan_start
 
         # ------------------------------------------------------------------
         # Load core channels (I, V, B)
