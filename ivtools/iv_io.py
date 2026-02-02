@@ -508,12 +508,12 @@ def save_ivdata(
                 raw_df[c] = np.nan
 
     # output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-    output_base = f"IV_{temperature}K_{tfield}T_{orientation}deg_{fname}"
+    output_base = f"{sample}_IV_{temperature}K_{tfield}T_{orientation}deg_{fname}"
     if origin:
         output_base = output_base + '_OriginReadable'
     output_base = output_base.replace(".","p")
     raw_path = base_path / f"{output_base}_ivs.csv"
-    header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
+    header_comment = f"{sample} | {temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
     # Build header rows
     label_row, unit_row, meta_row = build_origin_headers(columns, column_meta, header_comment)
@@ -602,12 +602,12 @@ def save_fitdata(
                 fit_df[c] = np.nan
 
     # output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
-    output_base = f"IcH_{temperature}K_{tfield}T_{orientation}deg_{fname}"
+    output_base = f"{sample}_IcH_{temperature}K_{tfield}T_{orientation}deg_{fname}"
     if origin:
         output_base = output_base + '_OriginReadable'
     output_base = output_base.replace(".","p")
     fit_path = base_path / f"{output_base}_fit.csv"
-    header_comment = f"{temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
+    header_comment = f"{sample} | {temperature} K | {tfield} T | {orientation} deg | {magnet} | {fname}"
 
     label_row, unit_row, meta_row = build_origin_headers(columns, column_meta, header_comment)
 

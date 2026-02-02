@@ -41,7 +41,7 @@ def split_by_jump(df, drop_factor=0.5):
 
 
 
-def find_ROI(iv_file, index, flat_threshold=0.0005, center_fraction=0.5):
+def find_ROI(iv_file, index, center_fraction, flat_threshold=0.0005):
     """
     Determine the region of interest (ROI) around a specified index in the data.
 
@@ -156,11 +156,11 @@ def safe_mean(V): # Avoid extra math
 
 
 
-def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx'):
+def process_IV_pulse(iv_file,top,left,right,center_fraction):
     '''
     Extracts the voltage, current, field and temperature for a single IV pulse iv_file class.
     '''
-    lROI,hROI = find_ROI(iv_file,top)
+    lROI,hROI = find_ROI(iv_file,top, center_fraction)
 
     error_std = iv_file.noise_std
     error_rms = iv_file.noise_rms
@@ -174,19 +174,14 @@ def process_IV_pulse(iv_file,top,left,right,excelname='250519_houston_log.xlsx')
     
     T = iv_io.extract_numeric_temperature(iv_file.T)
     
-    left_lROI,left_hROI = find_ROI(iv_file,left)
-    right_lROI, right_hROI = find_ROI(iv_file,right)
+    left_lROI,left_hROI = find_ROI(iv_file,left, center_fraction)
+    right_lROI, right_hROI = find_ROI(iv_file,right, center_fraction)
 
 
     V, processed_V = safe_mean(iv_file.V[lROI:hROI])
     leftV, _ = safe_mean(iv_file.V[left_lROI:left_hROI])
     rightV, _ = safe_mean(iv_file.V[right_lROI:right_hROI])
-    # print(leftV,V,rightV)
     V = V - (leftV+rightV)/2 # 1st option
-    # V = V - leftV # 2nd option
-    # V = V - rightV # 3rd option
-    # if option == 'alt_dirty' or excelname=='250519_houston_log.xlsx':
-    #     V += I*(0.00014286)
 
     result = {
         'Current [A]': I,
@@ -211,131 +206,6 @@ def powerlaw_inverted(vc,k,n):
     return (vc / k) ** (1 / n)
 
 import statsmodels.api as sm
-
-# def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3): 
-#     """
-#     Find parameters to describe non-linear IV behavior.
-#     Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. 
-#     Fit on y′ = n*x + c, for: 
-#         x = log I
-#         y′ = logV
-#         c = k
-
-#     Parameters
-#     ----------
-#     x : array-like
-#         Independent variable (must be > 0).
-#     y : array-like
-#         Dependent variable (must be > 0).
-#     voltage_criterion : float
-#         Voltage criterion for Ic calulation. Included for compatability with alternative function.
-#     weight_power : float
-#         Exponent used when constructing weights.
-
-#     Returns
-#     -------
-#     k : float
-#         Pre exponent expected downstream
-#     Ic : float
-#         Critical current
-#     n : float
-#         Power-law exponent
-#     """
-#     # log fit on log V = log k + n*log I
-#     mask = (x > 0) & (y > 0)
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-
-#     # Filter out invalid values
-#     if np.count_nonzero(mask) < 2:
-#         raise ValueError("Not enough valid data points for log-log fit.")
-    
-#     # Weights: proportional to actual current
-#     # (low voltages have larger fractional noise)
-#     w = (x[mask]**weight_power) 
-
-#     X = sm.add_constant(log_x)
-#     model = sm.WLS(log_y, X, weights=w)
-#     results = model.fit()
-
-#     log_a = results.params[0]
-#     n = results.params[1]
-#     k = np.exp(log_a)
-#     ic = None
-#     return k, n, ic#, results
-
-# def fit_power_law_wls(x, y, voltage_criterion = None, weight_power=3,weight_mode='index'): 
-#     """
-#     Find parameters to describe non-linear IV behavior.
-#     Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. 
-#     Fit on y′ = n*x + c, for: 
-#         x = log I
-#         y′ = logV − logVc 
-#         c = −n log Ic
-
-#     Parameters
-#     ----------
-#     x : array-like
-#         Independent variable (must be > 0).
-#     y : array-like
-#         Dependent variable (must be > 0).
-#     voltage_criterion : float
-#         Voltage criterion for Ic calulation.
-#     weight_power : float
-#         Exponent used when constructing weights.
-#     weight_mode : str
-#         "x"      -> weights = x**weight_power
-#         "index"  -> weights = (1..N)**weight_power
-
-#     Returns
-#     -------
-#     k : float
-#         Pre exponent expected downstream
-#     Ic : float
-#         Critical current
-#     n : float
-#         Power-law exponent
-#     """
-    
-#     mask = (x > 0) & (y > 0)
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-#     log_vc = np.log(voltage_criterion)
-
-#     # Filter out invalid values
-#     if np.count_nonzero(mask) < 2:
-#         raise ValueError("Not enough valid data points for log-log fit.")
-    
-#     fit_y = log_y - log_vc
-    
-#     # # Weights: proportional to actual current
-#     # # (low voltages have larger fra ctional noise)
-#     # w = (x[mask]**weight_power) 
-
-
-#     # ----------------------------------------------------------------------
-#     # Weight construction
-#     # ----------------------------------------------------------------------
-#     if weight_mode == "x":
-#         # w = log_x ** weight_power # maybe x?
-#         w = x[mask] ** weight_power # maybe x?
-
-#     elif weight_mode == "index":
-#         # Weight by progression in the *filtered* dataset
-#         idx = np.arange(1, len(log_x) + 1)
-#         w = idx ** weight_power
-
-#     X = sm.add_constant(log_x)
-#     model = sm.WLS(fit_y, X, weights=w)
-#     results = model.fit()
-
-#     c = results.params[0]
-
-#     n = results.params[1]
-#     ic = np.exp(-c / n)
-#     k = voltage_criterion / (ic**n)
-
-#     return k, n, ic#, results
 
 
 def fit_power_law_wls(
@@ -543,108 +413,6 @@ def compute_R2_weighted(
     return 1 - ss_res / ss_tot
 
 
-# def lin_subtraction(x,y,cutoff,linear_sub_criterion):
-#     best_lin_r2 = 0
-#     best_p = None
-
-#     fit_check_y = y[y<cutoff]
-#     fit_check_x = x[y<cutoff]
-
-#     # # if len(fit_check_x)>=3: # better behavior for large IVs
-#     # #     fit_check_y = y[y<cutoff*.5]
-#     # #     fit_check_x = x[y<cutoff*.5]
-
-#     for start in range(0,len(y)):
-#         # if y[start] >= cutoff and start !=0:
-#         #     continue
-#         for end in range(1,len(y)):
-#         # for end in [len(y)-1]:
-#             if end - start < 2:
-#                 continue
-#             else:
-#                 x_fit = x[start:end]
-#                 y_fit = y[start:end]
-#                 # Step 2. Fit linear and compute R2
-#                 try:
-#                     p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
-#                     y_pred = np.polyval(p, fit_check_x)
-#                     ss_res = np.sum((fit_check_y - y_pred) ** 2)
-#                     ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
-#                     lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
-#                 except:
-#                     lin_r2 = 0
-#                 if lin_r2 > best_lin_r2:
-#                     best_lin_r2 = lin_r2
-#                     best_p = p
-
-#     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
-#         # plt.clf()
-#         # print('\n\n\n\nSubtracted!\n\n\n\n')
-#         # plt.plot(np.linspace(1,len(y),len(y)),y)
-#         lin_fit_full_y = np.polyval(best_p, x)
-#         y = y - lin_fit_full_y
-#         # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
-#         # plt.plot(np.linspace(1,len(y),len(y)),y)
-#         # plt.gca().axhspan(0,0.01e-6)
-#         # plt.gca().axhspan(24.9e-6,25.01e-6)
-#         # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
-#         # plt.gca().grid()
-#         # plt.show()
-#     return y
-
-
-# def lin_subtraction(x,y,cutoff,linear_sub_criterion): # cutoff as resistance
-#     best_lin_r2 = 0
-#     best_p = None
-
-#     fit_check_y = y[y/x<cutoff]
-#     fit_check_x = x[y/x<cutoff]
-
-#     # # if len(fit_check_x)>=3: # better behavior for large IVs
-#     # #     fit_check_y = y[y<cutoff*.5]
-#     # #     fit_check_x = x[y<cutoff*.5]
-
-#     for start in range(0,len(y)):
-#         # if y[start] >= cutoff and start !=0:
-#         #     continue
-#         for end in range(1,len(y)):
-#         # for end in [len(y)-1]:
-#             if end - start < 2:
-#                 continue
-#             else:
-#                 x_fit = x[start:end]
-#                 y_fit = y[start:end]
-#                 # Step 2. Fit linear and compute R2
-#                 try:
-#                     p,_, _, _, _ = np.polyfit(x_fit, y_fit, 1, full=True)
-#                     y_pred = np.polyval(p, fit_check_x)
-#                     ss_res = np.sum((fit_check_y - y_pred) ** 2)
-#                     ss_tot = np.sum((fit_check_y - np.mean(fit_check_y)) ** 2)
-#                     lin_r2 = 1 - ss_res/ss_tot# if ss_tot > 0 else -np.inf
-#                 except:
-#                     lin_r2 = 0
-#                 if lin_r2 > best_lin_r2:
-#                     best_lin_r2 = lin_r2
-#                     best_p = p
-
-#     if best_lin_r2 and best_lin_r2>linear_sub_criterion:
-#         # plt.clf()
-#         # print('\n\n\n\nSubtracted!\n\n\n\n')
-#         # plt.plot(np.linspace(1,len(y),len(y)),y)
-#         lin_fit_full_y = np.polyval(best_p, x)
-#         y = y - lin_fit_full_y
-#         # plt.plot(np.linspace(1,len(y),len(y)),lin_fit_full_y)
-#         # plt.plot(np.linspace(1,len(y),len(y)),y)
-#         # plt.gca().axhspan(0,0.01e-6)
-#         # plt.gca().axhspan(24.9e-6,25.01e-6)
-#         # plt.gca().axhspan(24.9e-6*.66,25.01e-6*.66)
-#         # plt.gca().grid()
-#         # plt.show()
-#     return y
-
-import numpy as np
-from scipy.signal import savgol_filter
-
 def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
     """
     Identify and subtract a linear background using log–log slope deviation.
@@ -716,41 +484,6 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
 
     # require contiguity starting from lowest |I|
     idx = np.argsort(np.abs(x0))
-    good_sorted = good[idx]
-
-    # Conservative
-    # count = 0
-    # for g in good_sorted:
-    #     if g:
-    #         count += 1
-    #     else:
-    #         break
-
-
-    # if count < 3:
-    #     return y  # no defensible linear regime
-
-    # lin_idx = idx[:count]
-
-    # # Improved 1
-    # max_bad = 3
-    # count = 0
-    # bad = 0
-
-    # for g in good_sorted:
-    #     if g:
-    #         count += 1
-    #     else:
-    #         bad += 1
-
-    #         if bad > max_bad:
-    #             break
-
-    
-    # if count < 3:
-    #     return y  # no defensible linear regime
-
-    # lin_idx = idx[:count]
 
     # Improved 2
     max_bad = 3
@@ -771,9 +504,6 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
     else:
         return y
     
-    print('-----------------\nThe slope\n:',slope)
-    print('\nThe good\n:',good)
-    print('\nThe count\n:',lin_idx)
 
     x_lin = x0[lin_idx]
     y_lin = y0[lin_idx]
@@ -888,15 +618,6 @@ def anchor_low_voltage(x, y, noise_level):
     V_anchor = 0      # baseline measurable voltage
     # V_anchor = 0.001 * noise_level      # baseline measurable voltage
     
-    # # Append
-    # x_aug = np.append(x, I_anchor)
-    # y_aug = np.append(y, V_anchor)
-
-
-    # # Doubling down?
-    # I_anchor = I_min*0.001
-    # V_anchor = 0
-
 
     # Append and re-sort
     x_aug = np.append(x, I_anchor)
@@ -904,33 +625,3 @@ def anchor_low_voltage(x, y, noise_level):
     order = np.argsort(x_aug)
 
     return x_aug[order], y_aug[order]
-
-
-# def fit_power_law(x, y):
-#     """
-#     Fit y = a * x^b using linear regression in log-log space.
-    
-#     Parameters:
-#         x (array-like): Independent variable (must be > 0). 
-#         y (array-like): Dependent variable (must be > 0).
-    
-#     Returns:
-#         a (float): Prefactor in power law.
-#         b (float): Exponent.
-#         r2 (float): R² of the fit in log-log space.
-#     """
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-    
-#     # Filter out invalid values
-#     mask = (x > 1e-9) & (y > 0)
-#     if np.count_nonzero(mask) < 2:
-#         raise ValueError("Not enough valid data points for log-log fit.")
-    
-#     log_x = np.log(x[mask])
-#     log_y = np.log(y[mask])
-
-#     b, log_a = np.polyfit(log_x, log_y, 1)
-#     a = np.exp(log_a)
-
-#     return a, b

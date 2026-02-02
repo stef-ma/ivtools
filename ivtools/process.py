@@ -46,7 +46,8 @@ def process_ivf(
     maxfp,
     magnet='Mid Pulse',
     verbose = False,
-    lin_sub_level = None
+    lin_sub_level = None,
+    center_fraction=0.5
     ):
     
     fname = os.path.basename(fp)
@@ -75,7 +76,7 @@ def process_ivf(
         IV_pulse_iteration = 0
         for j, top in enumerate(highs):
             with suppress_print(verbose):
-                result, *_ = fit_utils.process_IV_pulse(ivf, top, lows[2 * j], lows[2 * j + 1])
+                result, *_ = fit_utils.process_IV_pulse(ivf, top, lows[2 * j], lows[2 * j + 1],center_fraction=center_fraction)
             # IV Pulse iteration
             I = result['Current [A]']
             if I>=last_current:
