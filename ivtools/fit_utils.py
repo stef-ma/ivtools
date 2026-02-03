@@ -264,11 +264,15 @@ def fit_power_law_wls(
     if weight_mode == "x":
         # w = log_x ** weight_power # maybe x?
         w = x[mask] ** weight_power # maybe x?
+        
 
     elif weight_mode == "index":
         # Weight by progression in the *filtered* dataset
         idx = np.arange(1, len(log_x) + 1)
+        # w = idx ** weight_power
         w = idx ** weight_power
+        w = w / np.max(w)   # normalize
+
 
     # ----------------------------------------------------------------------
     # Weighted centering of log_x
@@ -279,10 +283,16 @@ def fit_power_law_wls(
 
 
     X = sm.add_constant(log_xc)
+
+    
+
+
     model = sm.WLS(fit_y, X, weights=w)
     results = model.fit()
 
     n = results.params[1]
+
+
 
     c = results.params[0]
     c = c - n * x_bar        # original intercept
@@ -290,25 +300,95 @@ def fit_power_law_wls(
 
     k = voltage_criterion / (ic**n)
 
-    cov = results.cov_params()
 
-    var_ct = cov[0, 0]        # Var(ĉ)
-    var_n  = cov[1, 1]        # Var(n)
-    cov_cn = cov[0, 1]        # Cov(ĉ, n)
+    M = X.T @ np.diag(w) @ X
+    cond = np.linalg.cond(M)
+    if cond > 1e10 or abs(n) < 0.5:
+        sigma_n = np.nan
+        sigma_ic = np.nan
+        return k, n, ic, sigma_ic, sigma_n
 
-    # Variance of log(Ic)
-    var_log_ic = (
-        var_ct / n**2
-        + (c**2 / n**4) * var_n
-        - 2 * c / n**3 * cov_cn
-    )
+    # cov = results.cov_params()
 
-    sigma_ic = ic * np.sqrt(var_log_ic)
-    sigma_n = np.sqrt(cov[1, 1])
+    # var_ct = cov[0, 0]        # Var(ĉ)
+    # var_n  = cov[1, 1]        # Var(n)
+    # cov_cn = cov[0, 1]        # Cov(ĉ, n)
+
+    # # Variance of log(Ic)
+    # var_log_ic = (
+    #     var_ct / n**2
+    #     + (c**2 / n**4) * var_n
+    #     - 2 * c / n**3 * cov_cn
+    # )
+
+    # sigma_ic = ic * np.sqrt(var_log_ic)
+    # sigma_n = np.sqrt(cov[1, 1])
 
     # print(w)
 
+    # sigma_k, sigma_n = compute_uncertainties_nonlinear(
+    #     x[mask], 
+    #     y[mask], 
+    #     k, 
+    #     n
+    #     )   
+    
+    # var_log_ic = ((sigma_k / k)**2 / n**2 + (np.log(ic) * sigma_n / n)**2)
+
+    # sigma_ic = ic * np.sqrt(var_log_ic)
+
+    cov = results.cov_params()
+
+    sigma_n = np.sqrt(cov[1,1])
+
+    # Jacobian-based propagation for log(Ic)
+    J = np.array([-1/n, c/n**2])
+    var_log_ic = J @ cov @ J
+
+    if var_log_ic > 0:
+        sigma_ic = ic * np.sqrt(var_log_ic)
+    else:
+        sigma_ic = np.nan
+
     return k, n, ic, sigma_ic, sigma_n#, results
+
+# from scipy.optimize import curve_fit
+
+# def compute_uncertainties_nonlinear(x, y, k, n):
+#     """
+#     Compute robust uncertainties for (k, n) using nonlinear least squares.
+#     Uses current WLS estimates as initial guesses.
+
+#     Parameters
+#     ----------
+#     x, y : arrays
+#         Original data (not log transformed)
+#     k, n : floats
+#         Best-fit parameters from log-log WLS
+#     w : array or None
+#         Optional weights (same as used in WLS)
+
+#     Returns
+#     -------
+#     sigma_k, sigma_n
+#     """
+
+#     try:
+#         popt, pcov = curve_fit(
+#             powerlaw,
+#             x, y,
+#             p0=(k, n),
+#             maxfev=20000
+#         )
+
+
+#         sigma_k, sigma_n = np.sqrt(np.diag(pcov))
+
+#     except Exception:
+#         sigma_k, sigma_n = np.nan, np.nan
+
+#     return sigma_k, sigma_n
+
 
 def try_fit_power_law(x, y, voltage_criterion=None):
     """
@@ -616,6 +696,7 @@ def anchor_low_voltage(x, y, noise_level):
     # Create a synthetic anchor point
     I_anchor = 1e-6 * I_min      # six order of magnitude lower
     V_anchor = 0      # baseline measurable voltage
+    # V_anchor = noise_level*1e-6      # baseline measurable voltage
     # V_anchor = 0.001 * noise_level      # baseline measurable voltage
     
 

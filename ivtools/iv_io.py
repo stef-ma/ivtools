@@ -42,6 +42,7 @@ class IV_File:
         voltage_channel='V',
         current_channel='I',
         ppms_field=None,
+        verbose=False
     ):
         # --- Load TDMS file ---
         self.tdms_file = nptdms.TdmsFile.read(filepath)
@@ -61,9 +62,9 @@ class IV_File:
 
         # --- Required channel check ---
         if ppms_field is None:
-            required_channels = {voltage_channel, current_channel, 'Field'}
+            required_channels = {voltage_channel, current_channel, 'Pnum', 'Vavg' 'Field'}
         else:
-            required_channels = {voltage_channel, current_channel}
+            required_channels = {voltage_channel, current_channel, 'Pnum', 'Vavg'}
 
         missing = required_channels - set(all_channels)
         if missing:
