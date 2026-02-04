@@ -62,7 +62,7 @@ class IV_File:
 
         # --- Required channel check ---
         if ppms_field is None:
-            required_channels = {voltage_channel, current_channel, 'Pnum', 'Vavg' 'Field'}
+            required_channels = {voltage_channel, current_channel, 'Pnum', 'Vavg', 'Field'}
         else:
             required_channels = {voltage_channel, current_channel, 'Pnum', 'Vavg'}
 
@@ -102,7 +102,7 @@ class IV_File:
             try:
                 self.B, _, _, _ = self._load_channel_data('Field_fixed')
             except Exception:
-                print(f'No Field_fixed found in {filepath}, using Field')
+                print(f'[INFO] No Field_fixed found in {filepath}, using Field')
                 self.B, _, _, _ = self._load_channel_data('Field')
         elif isinstance(ppms_field, (int, float)):
             self.B = np.round(np.ones(len(self.I)) * ppms_field, 2)
@@ -304,6 +304,7 @@ COLUMN_META_RAW = {
 }
 COLUMN_META_FIT = {
     "Field_T":                ("Field", "T"),
+    "dBdt_Ts":                ("dB/dt", "T/s"),
     "I_c_A":                  ("Ic", "A"),
     "I_c_A_pos_dBdt":         ("Ic (dH/dt>0)", "A"),
     "I_c_A_neg_dBdt":         ("Ic (dH/dt<=0)", "A"),
@@ -333,6 +334,7 @@ COLUMN_META_RAW_ORIGIN = {
 }
 COLUMN_META_FIT_ORIGIN = {
     "Field_T":                ("\g(m)\-(0)H", "T"),
+    "dBdt_Ts":                ("dB/dt", "T/s"),
     "I_c_A":                  ("I\-(c)", "A"),
     "I_c_A_pos_dBdt":         ("I\-(c) (dH/dt>0)", "A"),
     "I_c_A_neg_dBdt":         ("I\-(c) (dH/dt<=0)", "A"),
@@ -354,13 +356,16 @@ COLUMN_META_FIT_ORIGIN = {
 FIT_PRESETS = {
     "full": [
         "Field_T",
+        "dBdt_Ts",
         "I_c_A",
+        "I_c_A_err",
         "I_c_A_pos_dBdt",
         "I_c_A_neg_dBdt",
         "I_cpw_Acmw",
         "J_c_MAcm2",
         "k",
         "n",
+        "n_err",
         "n_pos_dBdt",
         "n_neg_dBdt",
         "pdx",
@@ -568,7 +573,7 @@ def save_fitdata(
     # default columns
     if columns is None:
         columns = [
-            "Field_T","I_c_A","I_c_A_pos_dBdt","I_c_A_neg_dBdt",
+            "Field_T","Avg dB/dt [T/s]","I_c_A","I_c_A_pos_dBdt","I_c_A_neg_dBdt",
             "I_cpw_Acmw","J_c_MAcm2","k","n","n_pos_dBdt","n_neg_dBdt",
             "pdx","fit_start_idx","fit_end_idx"
         ]
@@ -577,6 +582,7 @@ def save_fitdata(
     fit_df = fit_df.copy()
     # compute/normalize the internal names used by downstream CSV
     fit_df["Field_T"] = fit_df.get("Avg Field [T]", fit_df.get("Field_T", np.nan))
+    fit_df["dBdt_Ts"] = fit_df.get("Avg dB/dt [T/s]", fit_df.get("dBdt_Ts", np.nan))
     fit_df["I_c_A"] = fit_df.get("I_c", fit_df.get("I_c_A", np.nan))
     # Pos/neg splits: create series aligned with full df by masking
     fit_df["I_c_A_pos_dBdt"] = np.where(fit_df.get("Avg dB/dt [T/s]", 0) > 0, fit_df.get("I_c", np.nan), np.nan)
