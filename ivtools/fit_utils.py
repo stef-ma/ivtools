@@ -617,7 +617,7 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
         return y
 
 
-    print('\n\n\n+++++++++++++++++++++++++++++\n\n\nCorrection:\n',y,'\n',y_corr,'\n',p)
+    # print('\n\n\n+++++++++++++++++++++++++++++\n\n\nCorrection:\n',y,'\n',y_corr,'\n',p)
 
     return y_corr
 
@@ -636,8 +636,11 @@ def masking(x,y,noise_level):
     monotonic_mask = np.concatenate([[True], np.diff(y) >= 0]) 
 
     # monotonic_mask = [True]
+    # ydxmax = y[0]
     # for idx in range(1, len(y)):
-    #     if y[idx] >= y[idx - 1]:
+    #     # if y[idx] >= y[idx - 1]:
+    #     if y[idx] >= y[idx - 1] and y[idx]>ydxmax:
+    #         ydxmax = y[idx]
     #         monotonic_mask.append(True)
     #     else:
     #         monotonic_mask.append(False)
