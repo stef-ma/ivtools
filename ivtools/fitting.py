@@ -165,6 +165,8 @@ def fit_IV_for_Ic(
                                 test_end = end
                                 best_start = orig_indices[start] if orig_indices[start]!=-1 else 0
                                 best_end = orig_indices[end]
+                                best_sigma_ic = sigma_ic
+                                best_sigma_n = sigma_n
             # print (f'Best power law fit found for segment {i} in file {segment["File"].unique()[0]}: R² = {best_r2}.')
         fit_successful = best_k is not None and best_n is not None
         fit_successes.append(fit_successful)
@@ -181,8 +183,8 @@ def fit_IV_for_Ic(
             # segments_power.append(segment.iloc[best_start:].copy())
             segments_power.append(segment.iloc[best_start:best_end][['Current [A]', 'Voltage [V]']].copy())
             dlen.append(datapoints)
-            sigmas_ic.append(sigma_ic)
-            sigmas_n.append(sigma_n)
+            sigmas_ic.append(best_sigma_ic)
+            sigmas_n.append(best_sigma_n)
 
 
 
