@@ -205,189 +205,182 @@ def powerlaw(I, k, n):
 def powerlaw_inverted(vc,k,n):
     return (vc / k) ** (1 / n)
 
+
 import statsmodels.api as sm
 
 
 def fit_power_law_wls(
-        x, 
-        y, 
-        voltage_criterion = None, 
-        weight_power=3,
-        weight_mode='index'
-        ): 
+    x,
+    y,
+    voltage_criterion,
+    weight_power=3,
+    weight_mode="index",
+    cond_threshold=1e10,
+    min_slope=1e-6,
+):
     """
-    Find parameters to describe non-linear IV behavior.
-    Fit V/Vc = (I/Ic)^n in log-log space using weighted least squares. Centers log V with the weights for better fit stability. 
-    Fit on y′ = n*x + c, for: 
-        x = log I
-        y′ = logV − logVc 
-        c = −n log Ic
+    Weighted least-squares fit of the power-law IV model:
+
+        V / Vc = (I / Ic)^n
+
+    Performed in log-log space:
+
+        log(V) - log(Vc) = n log(I) + c
+        where c = -n log(Ic)
+
+    The fit is performed using weighted least squares (WLS),
+    including weighted centering of log(I) to reduce intercept–slope
+    correlation and improve conditioning.
 
     Parameters
     ----------
     x : array-like
-        Independent variable (must be > 0).
+        Current values (must be > 0).
     y : array-like
-        Dependent variable (must be > 0).
+        Voltage values (must be > 0).
     voltage_criterion : float
-        Voltage criterion for Ic calulation.
-    weight_power : float
-        Exponent used when constructing weights.
-    weight_mode : str
-        "x"      -> weights = x**weight_power
-        "index"  -> weights = (1..N)**weight_power
+        Voltage criterion Vc (must be > 0).
+    weight_power : float, optional
+        Exponent used in weight construction.
+    weight_mode : {"x", "index"}, optional
+        "x"      -> weights = I^weight_power
+        "index"  -> weights = (1..N)^weight_power
+    cond_threshold : float
+        Maximum acceptable condition number for the weighted
+        normal matrix. Above this, uncertainties are returned as NaN.
+    min_slope : float
+        Minimum |n| allowed before Ic propagation is considered unstable.
 
     Returns
     -------
     k : float
-        Pre exponent expected downstream
-    Ic : float
-        Critical current
+        Pre-exponent (k = Vc / Ic^n).
     n : float
-        Power-law exponent
+        Power-law exponent.
+    Ic : float
+        Critical current.
+    sigma_Ic : float
+        Uncertainty of Ic (NaN if unstable).
+    sigma_n : float
+        Uncertainty of n (NaN if unstable).
     """
-    
+
+    # ------------------------------------------------------------
+    # 1. Input validation
+    # ------------------------------------------------------------
+
+    if voltage_criterion is None or voltage_criterion <= 0:
+        raise ValueError("voltage_criterion must be a positive number.")
+
+    x = np.asarray(x)
+    y = np.asarray(y)
+
     mask = (x > 0) & (y > 0)
+    if np.count_nonzero(mask) < 2:
+        raise ValueError("Not enough valid positive data points for log-log fit.")
+
     log_x = np.log(x[mask])
     log_y = np.log(y[mask])
     log_vc = np.log(voltage_criterion)
 
-    # Filter out invalid values
-    if np.count_nonzero(mask) < 2:
-        raise ValueError("Not enough valid data points for log-log fit.")
-    
     fit_y = log_y - log_vc
-    
-    # ----------------------------------------------------------------------
-    # Weight construction
-    # ----------------------------------------------------------------------
+
+    # ------------------------------------------------------------
+    # 2. Weight construction
+    # ------------------------------------------------------------
+
     if weight_mode == "x":
-        # w = log_x ** weight_power # maybe x?
-        w = x[mask] ** weight_power # maybe x?
-        
+        # Weight based on current magnitude
+        w = x[mask] ** weight_power
 
     elif weight_mode == "index":
-        # Weight by progression in the *filtered* dataset
+        # Weight based on ordering in filtered dataset
         idx = np.arange(1, len(log_x) + 1)
-        # w = idx ** weight_power
         w = idx ** weight_power
-        w = w / np.max(w)   # normalize
 
+    else:
+        raise ValueError("weight_mode must be 'x' or 'index'.")
 
-    # ----------------------------------------------------------------------
-    # Weighted centering of log_x
-    # ----------------------------------------------------------------------
+    # Normalize weights to avoid scaling-dependent covariance distortion
+    w = w / np.max(w)
+
+    # ------------------------------------------------------------
+    # 3. Weighted centering (improves numerical stability)
+    # ------------------------------------------------------------
+
     w_sum = np.sum(w)
-    x_bar = np.sum(w * log_x) / w_sum     # weighted mean
-    log_xc = log_x - x_bar                # centered coordinates
-
+    x_bar = np.sum(w * log_x) / w_sum
+    log_xc = log_x - x_bar
 
     X = sm.add_constant(log_xc)
 
-    
-
+    # ------------------------------------------------------------
+    # 4. Fit using weighted least squares
+    # ------------------------------------------------------------
 
     model = sm.WLS(fit_y, X, weights=w)
     results = model.fit()
 
     n = results.params[1]
 
+    # Guard against unstable slope
+    if abs(n) < min_slope:
+        return np.nan, np.nan, np.nan, np.nan, np.nan
 
+    # Recover original intercept
+    c_centered = results.params[0]
+    c = c_centered - n * x_bar
 
-    c = results.params[0]
-    c = c - n * x_bar        # original intercept
-    ic = np.exp(-c / n)
+    Ic = np.exp(-c / n)
+    k = voltage_criterion / (Ic ** n)
 
-    k = voltage_criterion / (ic**n)
+    # ------------------------------------------------------------
+    # 5. Condition number check on weighted normal matrix
+    # ------------------------------------------------------------
 
+    W = np.diag(w)
+    M = X.T @ W @ X
+    cond_number = np.linalg.cond(M)
 
-    M = X.T @ np.diag(w) @ X
-    cond = np.linalg.cond(M)
-    if cond > 1e10 or abs(n) < 0.5:
-        sigma_n = np.nan
-        sigma_ic = np.nan
-        return k, n, ic, sigma_ic, sigma_n
+    if cond_number > cond_threshold:
+        # Ill-conditioned system → unreliable covariance
+        return k, n, Ic, np.nan, np.nan
 
-    # cov = results.cov_params()
-
-    # var_ct = cov[0, 0]        # Var(ĉ)
-    # var_n  = cov[1, 1]        # Var(n)
-    # cov_cn = cov[0, 1]        # Cov(ĉ, n)
-
-    # # Variance of log(Ic)
-    # var_log_ic = (
-    #     var_ct / n**2
-    #     + (c**2 / n**4) * var_n
-    #     - 2 * c / n**3 * cov_cn
-    # )
-
-    # sigma_ic = ic * np.sqrt(var_log_ic)
-    # sigma_n = np.sqrt(cov[1, 1])
-
-    # print(w)
-
-    # sigma_k, sigma_n = compute_uncertainties_nonlinear(
-    #     x[mask], 
-    #     y[mask], 
-    #     k, 
-    #     n
-    #     )   
-    
-    # var_log_ic = ((sigma_k / k)**2 / n**2 + (np.log(ic) * sigma_n / n)**2)
-
-    # sigma_ic = ic * np.sqrt(var_log_ic)
+    # ------------------------------------------------------------
+    # 6. Covariance extraction
+    # ------------------------------------------------------------
 
     cov = results.cov_params()
 
-    sigma_n = np.sqrt(cov[1,1])
+    var_c = cov[0, 0]
+    var_n = cov[1, 1]
+    cov_cn = cov[0, 1]
 
-    # Jacobian-based propagation for log(Ic)
-    J = np.array([-1/n, c/n**2])
-    var_log_ic = J @ cov @ J
+    sigma_n = np.sqrt(var_n) if var_n > 0 else np.nan
 
-    if var_log_ic > 0:
-        sigma_ic = ic * np.sqrt(var_log_ic)
+    # ------------------------------------------------------------
+    # 7. Uncertainty propagation for Ic
+    #
+    # log(Ic) = -c / n
+    #
+    # Use first-order Taylor expansion:
+    #
+    # Var(log Ic) = J @ Cov @ J^T
+    # where J = [∂/∂c, ∂/∂n]
+    #
+    # ∂/∂c = -1/n
+    # ∂/∂n = c/n^2
+    # ------------------------------------------------------------
+
+    J = np.array([-1.0 / n, c / (n ** 2)])
+    var_log_Ic = J @ cov @ J
+
+    if var_log_Ic > 0:
+        sigma_Ic = Ic * np.sqrt(var_log_Ic)
     else:
-        sigma_ic = np.nan
+        sigma_Ic = np.nan
 
-    return k, n, ic, sigma_ic, sigma_n#, results
-
-# from scipy.optimize import curve_fit
-
-# def compute_uncertainties_nonlinear(x, y, k, n):
-#     """
-#     Compute robust uncertainties for (k, n) using nonlinear least squares.
-#     Uses current WLS estimates as initial guesses.
-
-#     Parameters
-#     ----------
-#     x, y : arrays
-#         Original data (not log transformed)
-#     k, n : floats
-#         Best-fit parameters from log-log WLS
-#     w : array or None
-#         Optional weights (same as used in WLS)
-
-#     Returns
-#     -------
-#     sigma_k, sigma_n
-#     """
-
-#     try:
-#         popt, pcov = curve_fit(
-#             powerlaw,
-#             x, y,
-#             p0=(k, n),
-#             maxfev=20000
-#         )
-
-
-#         sigma_k, sigma_n = np.sqrt(np.diag(pcov))
-
-#     except Exception:
-#         sigma_k, sigma_n = np.nan, np.nan
-
-#     return sigma_k, sigma_n
+    return k, n, Ic, sigma_Ic, sigma_n
 
 
 def try_fit_power_law(x, y, voltage_criterion=None):
@@ -533,13 +526,6 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
     # --- log–log slope ---
     logx = np.log(np.abs(x0))
     logy = np.log(np.abs(y0))
-
-    # # smooth to suppress numerical noise
-    # win = min(len(logx) // 2 * 2 - 1, 11)
-    # if win >= 5:
-    #     logy_s = savgol_filter(logy, win, 2)
-    # else:
-    #     logy_s = logy
 
     N = len(logx)
 

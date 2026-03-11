@@ -119,7 +119,6 @@ def process_ivf(
                 max_fit_points=maxfp,
                 noise_level = noise_level,
                 lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff
-
                 )
             if len(processed_segments)>0:
                 processed_df = pd.concat(segments, ignore_index=True)
