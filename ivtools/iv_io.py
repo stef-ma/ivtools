@@ -326,10 +326,10 @@ COLUMN_META_RAW_ORIGIN = {
     "Voltage_V":              ("V", "V"),
     "Vavg_V":                 ("Uncorrected V\-(avg)", "V"),
     "Processed_Voltage_V":    ("Processed Voltage", "V"),
-    "Field_T":                ("\g(m)-(0)H", "T"),
+    "Field_T":                ("\g(m)\-(0)H", "T"),
     "dBdt":                   ("dH/dt", "T/s"),
     "pdx":                    ("IV idx", ""),
-    "time_s":                 ("t", "s"),
+    "time_s":                 ("t", "s"), 
     "fnames":                 ("File", ""),
 }
 COLUMN_META_FIT_ORIGIN = {

@@ -213,8 +213,8 @@ def fit_power_law_wls(
     x,
     y,
     voltage_criterion,
-    weight_power=3,
-    weight_mode="index",
+    weight_power=1, #3
+    weight_mode="x", #index
     cond_threshold=1e10,
     min_slope=1e-6,
 ):
@@ -331,7 +331,7 @@ def fit_power_law_wls(
     c_centered = results.params[0]
     c = c_centered - n * x_bar
 
-    Ic = np.exp(-c / n)
+    Ic = np.exp(-c / n) # <------ Unreliable, calculate based on n  in fit_IV_for_Ic
     k = voltage_criterion / (Ic ** n)
 
     # ------------------------------------------------------------
@@ -346,8 +346,20 @@ def fit_power_law_wls(
         # Ill-conditioned system → unreliable covariance
         return k, n, Ic, np.nan, np.nan
 
+
     # ------------------------------------------------------------
-    # 6. Covariance extraction
+    # 6. Error
+    # ------------------------------------------------------------
+
+    sigma_Ic,sigma_n = wls_error(results,Ic,n,c)
+
+    # return k, n, Ic, confidence_interval_small_sample(Ic, sigma_Ic, len(x), confidence=0.90), confidence_interval_small_sample(n, sigma_n, len(x), confidence=0.90)
+    return k, n, Ic, sigma_Ic, sigma_n
+
+def wls_error(results,Ic,n,c):
+
+    # ------------------------------------------------------------
+    # 1. Covariance extraction
     # ------------------------------------------------------------
 
     cov = results.cov_params()
@@ -359,7 +371,7 @@ def fit_power_law_wls(
     sigma_n = np.sqrt(var_n) if var_n > 0 else np.nan
 
     # ------------------------------------------------------------
-    # 7. Uncertainty propagation for Ic
+    # 2. Uncertainty propagation for Ic
     #
     # log(Ic) = -c / n
     #
@@ -380,7 +392,21 @@ def fit_power_law_wls(
     else:
         sigma_Ic = np.nan
 
-    return k, n, Ic, sigma_Ic, sigma_n
+    return sigma_Ic,sigma_n
+    # return confidence_interval_small_sample(Ic, sigma_Ic, confidence=0.90),confidence_interval_small_sample(n, sigma_n, len(), confidence=0.90)
+
+# from scipy.stats import t, norm
+
+# def confidence_interval_small_sample(param, sigma_param, n_points, confidence=0.90):
+#     """
+#     Confidence interval using t-distribution (appropriate for small N).
+    
+#     Use this for BOTH n and Ic when n_points < 30.
+#     """
+#     df = n_points - 2  # degrees of freedom (n_points - n_parameters)
+#     t_critical = t.ppf((1 + confidence) / 2, df)
+    
+#     return t_critical * sigma_param
 
 
 def try_fit_power_law(x, y, voltage_criterion=None):
@@ -401,13 +427,55 @@ def try_fit_power_law(x, y, voltage_criterion=None):
         return None, None, None, None, None
     
 
+def compute_R2_weighted_hybrid(
+    x, y, a, b,
+    fit_window_indices,  # (start, end) of fitted data IN MASKED SPACE
+    weight_power=1, 
+    weight_mode="index", # index
+    extrapolation_penalty=0.5
+):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    
+    mask = (x > 1e-12) & (y > 0)
+    xg = x[mask]
+    yg = y[mask]
+    
+    # Weights based on your existing scheme
+    if weight_mode == "x":
+        w = xg ** weight_power
+    else:
+        idx = np.arange(1, len(xg) + 1)
+        w = idx ** weight_power
+    
+    # Three regions: before fit, in fit, after fit
+    start, end = fit_window_indices
+    
+    # Zero out everything before the fit window
+    w[:start] = 0
+    
+    # Apply extrapolation penalty to points AFTER the fit window
+    w[end:] = w[end:] * extrapolation_penalty
+    
+    # (Points in [start:end] keep their original weights)
+    
+    # Rest of R² calculation...
+    log_x = np.log(xg)
+    log_y = np.log(yg)
+    y_pred = np.log(a) + b * log_x
+    y_mean_w = np.sum(w * log_y) / np.sum(w)
+    ss_res = np.sum(w * (log_y - y_pred)**2)
+    ss_tot = np.sum(w * (log_y - y_mean_w)**2)
+    
+    return 1 - ss_res / ss_tot if ss_tot > 0 else -np.inf
+
 def compute_R2_weighted(
     x, 
     y, 
     a, 
     b, 
-    weight_power=3, 
-    weight_mode="index"      # "x" or "index"
+    weight_power=1, # 5
+    weight_mode="x"      # "x" or "index"
 ):
     """
     Compute weighted R² for the power-law fit y = a * x^b in log-log space.
@@ -496,7 +564,8 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
         Current
     y : array-like
         Voltage
-    cutoff : unused (kept for drop-in compatibility)
+    cutoff : float
+        Defines maximum slope in log-log space for consideration to avoid fitting power law curves
     linear_sub_criterion : float
         Allowed deviation of log–log slope from 1 (delta)
 
@@ -505,6 +574,10 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
     y_corr : ndarray
         Background-subtracted voltage
     """
+
+    # Early exit if user wants no subtraction
+    if linear_sub_criterion >= 1.0 or cutoff <= 0:
+        return y
 
     x = np.asarray(x)
     y = np.asarray(y)
@@ -684,8 +757,10 @@ def anchor_low_voltage(x, y, noise_level):
 
     # Create a synthetic anchor point
     I_anchor = 1e-6 * I_min      # six order of magnitude lower
-    V_anchor = 0      # baseline measurable voltage
-    # V_anchor = noise_level*1e-6      # baseline measurable voltage
+    # I_anchor = 1e-6       # six order of magnitude lower
+    # V_anchor = 0      # baseline measurable voltage
+    V_anchor = I_anchor*1e-3      # baseline measurable voltage
+    # V_anchor = 1e-6      # baseline measurable voltage
     # V_anchor = 0.001 * noise_level      # baseline measurable voltage
     
 
@@ -695,3 +770,159 @@ def anchor_low_voltage(x, y, noise_level):
     order = np.argsort(x_aug)
 
     return x_aug[order], y_aug[order]
+
+
+# TO WORK ON!
+
+# def compute_uncertainties_fast(x, y, Vc, k, n, Ic):
+#     """
+#     Combines three fast methods:
+#     1. Analytical for n (free)
+#     2. Residuals for Ic (near-free)
+#     3. Vc variation for systematic check (3× cost)
+    
+#     """
+#     # 1. Use covariance for n (you already compute this)
+#     sigma_n = your_current_sigma_n
+    
+#     # 2. Residual-based Ic uncertainty
+#     V_pred = Vc * (x / Ic) ** n
+#     residuals = np.log(y) - np.log(V_pred)
+#     s = np.std(residuals)
+#     sigma_Ic_residual = Ic * s / np.sqrt(len(x))
+    
+#     # 3. Systematic check (Vc variation)
+#     Ic_low = fit_at_Vc(x, y, Vc * 0.9)
+#     Ic_high = fit_at_Vc(x, y, Vc * 1.1)
+#     sigma_Ic_systematic = (Ic_high - Ic_low) / 2
+    
+#     # Combine statistical + systematic
+#     sigma_Ic = np.sqrt(sigma_Ic_residual**2 + sigma_Ic_systematic**2)
+    
+#     return sigma_Ic, sigma_n
+
+# def fit_power_law_bootstrap(
+#     x, y, voltage_criterion, 
+#     n_bootstrap=1000,
+#     **fit_kwargs
+# ):
+#     """
+#     Bootstrap uncertainty estimation for Ic and n.
+    
+#     Returns median Ic, n and their 1σ (~68%) confidence intervals.
+#     """
+#     N = len(x)
+#     Ic_samples = []
+#     n_samples = []
+    
+#     for _ in range(n_bootstrap):
+#         # Resample with replacement
+#         idx = np.random.choice(N, size=N, replace=True)
+#         x_boot = x[idx]
+#         y_boot = y[idx]
+        
+#         try:
+#             k, n, Ic, _, _ = fit_power_law_wls(
+#                 x_boot, y_boot, voltage_criterion, **fit_kwargs
+#             )
+#             if np.isfinite(Ic) and np.isfinite(n):
+#                 Ic_samples.append(Ic)
+#                 n_samples.append(n)
+#         except:
+#             continue
+    
+#     # Use 16th-84th percentile (1σ for normal distributions)
+#     Ic_median = np.median(Ic_samples)
+#     Ic_lower = np.percentile(Ic_samples, 16)
+#     Ic_upper = np.percentile(Ic_samples, 84)
+    
+#     n_median = np.median(n_samples)
+#     n_lower = np.percentile(n_samples, 16)
+#     n_upper = np.percentile(n_samples, 84)
+    
+#     return {
+#         'Ic': Ic_median,
+#         'Ic_err_low': Ic_median - Ic_lower,
+#         'Ic_err_high': Ic_upper - Ic_median,
+#         'n': n_median,
+#         'n_err_low': n_median - n_lower,
+#         'n_err_high': n_upper - n_median,
+#     }
+
+# def voltage_criterion_uncertainty(x, y, Vc_center, dVc=0.1e-6):
+#     """
+#     Estimate Ic uncertainty from Vc ± dVc.
+    
+#     Parameters
+#     ----------
+#     Vc_center : float
+#         Your chosen voltage criterion (e.g., 1e-7 V)
+#     dVc : float
+#         Uncertainty in Vc (e.g., 10% = 0.1e-7 V)
+#     """
+#     # Fit at three Vc values
+#     results = []
+#     for Vc in [Vc_center - dVc, Vc_center, Vc_center + dVc]:
+#         k, n, Ic, _, _ = fit_power_law_wls(x, y, Vc)
+#         results.append((Vc, Ic, n))
+    
+#     Ic_center = results[1][1]
+#     Ic_low = results[0][1]
+#     Ic_high = results[2][1]
+    
+#     # Symmetric error (or use asymmetric)
+#     sigma_Ic = (Ic_high - Ic_low) / 2
+    
+#     return Ic_center, sigma_Ic
+
+# def measurement_noise_propagation(x, y, Vc, sigma_V, sigma_I):
+#     """
+#     Propagate measurement noise through the fit.
+#     Uses Monte Carlo with measurement uncertainties.
+#     """
+#     N_trials = 1000
+#     Ic_samples = []
+    
+#     for _ in range(N_trials):
+#         # Add Gaussian noise to measurements
+#         x_noisy = x + np.random.normal(0, sigma_I, len(x))
+#         y_noisy = y + np.random.normal(0, sigma_V, len(y))
+        
+#         k, n, Ic, _, _ = fit_power_law_wls(x_noisy, y_noisy, Vc)
+#         if np.isfinite(Ic):
+#             Ic_samples.append(Ic)
+    
+#     return np.mean(Ic_samples), np.std(Ic_samples)
+
+
+# from scipy.stats import norm
+
+# def confidence_interval_analytical_Ic(Ic, sigma_Ic, confidence=0.90):
+#     """
+#     Assumes normal distribution of errors.
+#     """
+#     z = norm.ppf((1 + confidence) / 2)  # z = 1.645 for 90%
+#     # return Ic - z * sigma_Ic, Ic + z * sigma_Ic
+#     return z * sigma_Ic
+
+# from scipy.stats import t
+
+# def confidence_interval_analytical_n(n, sigma_n, n_points, confidence=0.90):
+#     """
+#     Confidence interval for n using t-distribution.
+    
+#     Simpler than Ic because:
+#     - n is fitted directly (no nonlinear transformation)
+#     - n doesn't have Vc systematic uncertainty
+#     - Error distribution is approximately Gaussian
+#     """
+#     df = n_points - 2  # degrees of freedom
+#     t_critical = t.ppf((1 + confidence) / 2, df)
+    
+#     CI_lower = n - t_critical * sigma_n
+#     CI_upper = n + t_critical * sigma_n
+
+#     CI = t_critical * sigma_n
+    
+#     # return CI_lower, CI_upper
+#     return CI

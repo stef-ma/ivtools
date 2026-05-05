@@ -38,7 +38,7 @@ def fit_IV_for_Ic(
             - I_cHs (list of float or None)
     """
     if lin_sub_level is None:
-        lin_sub_level=voltage_cutoff
+        lin_sub_level=0.5
 
     segments = fit_utils.split_by_jump(df)
     fit_successes = []
@@ -78,7 +78,6 @@ def fit_IV_for_Ic(
             dlen.append(datapoints)
             sigmas_ic.append(None)
             sigmas_n.append(None)
-
             continue
 
         cutoff_idx = cutoff_idx_array[0]
@@ -125,7 +124,7 @@ def fit_IV_for_Ic(
                 lin_r2_full = 1 - ss_res_lin[0] / ss_tot_lin
             except:
                 lin_r2_full = -np.inf
-            if lin_r2_full>.95:
+            if lin_r2_full>.98:
                 fit_successes.append(False)
                 ks.append(None)
                 bs.append(None)
@@ -141,6 +140,7 @@ def fit_IV_for_Ic(
                 sigmas_ic.append(None)
                 sigmas_n.append(None)
                 continue
+            # lin_r2_full = - np.inf
             for start in range(0,len(y)-1):
                 for end in range(1,len(y)):
                 # for end in [len(y)-1]: #USED FOR UKAEA
@@ -153,14 +153,22 @@ def fit_IV_for_Ic(
                         # k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit) # If old system, where cutoff is not needed.
                         k, n, ic, sigma_ic, sigma_n = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff)
                         r2 = fit_utils.compute_R2_weighted(x, y, k, n) if k is not None and n is not None else -np.inf
-                        if k is not None and r2 > best_r2 and n > 0 and r2>lin_r2_full:
+                        # r2 = fit_utils.compute_R2_weighted(x_fit, y_fit, k, n) if k is not None and n is not None else -np.inf
+                        # r2 = fit_utils.compute_R2_weighted_hybrid(
+                        #     x, y, k, n, 
+                        #     fit_window_indices=(start, end),
+                        #     extrapolation_penalty=1  # tuning factor (multiplies the weights of the points to the right of the ones used in the fitting)
+                        # )
+                        # if k is not None and r2 > best_r2 and n > 0 and (r2 > lin_r2_full or abs(n - 1) > lin_sub_level):
+                        if k is not None and r2 > best_r2 and n > 0 and abs(n - 1) > lin_sub_level:
                             # FINDME 2
                             if r2>power_law_criterion: # use 99 with noise supression
                             # if r2>0.5: # 
                                 best_k = k
                                 best_n = n
                                 best_r2 = r2
-                                best_Ic = ic if ic is not None else fit_utils.powerlaw_inverted(voltage_cutoff,k,n)
+                                # best_Ic = ic if ic is not None else fit_utils.powerlaw_inverted(voltage_cutoff,k,n)
+                                best_Ic = fit_utils.powerlaw_inverted(voltage_cutoff,best_k,best_n)
                                 test_start = start
                                 test_end = end
                                 best_start = orig_indices[start] if orig_indices[start]!=-1 else 0
