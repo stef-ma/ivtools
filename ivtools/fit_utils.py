@@ -409,7 +409,12 @@ def wls_error(results,Ic,n,c):
 #     return t_critical * sigma_param
 
 
-def try_fit_power_law(x, y, voltage_criterion=None):
+def try_fit_power_law(x, 
+                      y, 
+                      voltage_criterion=None,
+                      weight_power=1,
+                      weight_mode='x'
+                      ):
     """
     Try fitting power law; return (a, b) or (None, None) on failure.
     
@@ -422,7 +427,7 @@ def try_fit_power_law(x, y, voltage_criterion=None):
     """
     # return fit_power_law_wls(x,y,voltage_criterion) 
     try:
-        return fit_power_law_wls(x,y,voltage_criterion) 
+        return fit_power_law_wls(x,y,voltage_criterion,weight_power,weight_mode) 
     except Exception:
         return None, None, None, None, None
     
@@ -431,7 +436,7 @@ def compute_R2_weighted_hybrid(
     x, y, a, b,
     fit_window_indices,  # (start, end) of fitted data IN MASKED SPACE
     weight_power=1, 
-    weight_mode="index", # index
+    weight_mode="x", # index
     extrapolation_penalty=0.5
 ):
     x = np.asarray(x)
@@ -654,8 +659,8 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
     except Exception:
         return y
         
-    if p[0] <= 0:
-        return y
+    # if p[0] <= 0:
+    #     return y
 
 
     # --- subtract globally ---
@@ -758,9 +763,9 @@ def anchor_low_voltage(x, y, noise_level):
     # Create a synthetic anchor point
     I_anchor = 1e-6 * I_min      # six order of magnitude lower
     # I_anchor = 1e-6       # six order of magnitude lower
-    # V_anchor = 0      # baseline measurable voltage
-    V_anchor = I_anchor*1e-3      # baseline measurable voltage
-    # V_anchor = 1e-6      # baseline measurable voltage
+    V_anchor = 0      # baseline measurable voltage
+    # V_anchor = I_anchor*1e-3      # baseline measurable voltage
+    # V_anchor = 1e-9      # baseline measurable voltage
     # V_anchor = 0.001 * noise_level      # baseline measurable voltage
     
 

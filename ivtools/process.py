@@ -47,7 +47,9 @@ def process_ivf(
     magnet='Mid Pulse',
     verbose = False,
     lin_sub_level = None,
-    center_fraction=0.5
+    center_fraction=0.5,
+    weight_power=1,
+    weight_mode='x'
     ):
     
     fname = os.path.basename(fp)
@@ -118,7 +120,9 @@ def process_ivf(
                 min_fit_points=minfp,
                 max_fit_points=maxfp,
                 noise_level = noise_level,
-                lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff
+                lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff,
+                weight_power=weight_power,
+                weight_mode=weight_mode
                 )
             if len(processed_segments)>0:
                 processed_df = pd.concat(segments, ignore_index=True)

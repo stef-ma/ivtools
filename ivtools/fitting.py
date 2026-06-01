@@ -16,7 +16,9 @@ def fit_IV_for_Ic(
         min_fit_points=3, 
         max_fit_points=5, 
         noise_level=1.5e-5,
-        lin_sub_level = None
+        lin_sub_level = None,
+        weight_power=1,
+        weight_mode='x'
         ):
     """
     Analyze I–V data to extract segments, perform power-law fitting,
@@ -151,8 +153,8 @@ def fit_IV_for_Ic(
                         y_fit = y[start:end]
 
                         # k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit) # If old system, where cutoff is not needed.
-                        k, n, ic, sigma_ic, sigma_n = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff)
-                        r2 = fit_utils.compute_R2_weighted(x, y, k, n) if k is not None and n is not None else -np.inf
+                        k, n, ic, sigma_ic, sigma_n = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff, weight_power=weight_power,weight_mode=weight_mode)
+                        r2 = fit_utils.compute_R2_weighted(x, y, k, n, weight_power,weight_mode) if k is not None and n is not None else -np.inf
                         # r2 = fit_utils.compute_R2_weighted(x_fit, y_fit, k, n) if k is not None and n is not None else -np.inf
                         # r2 = fit_utils.compute_R2_weighted_hybrid(
                         #     x, y, k, n, 
@@ -160,7 +162,7 @@ def fit_IV_for_Ic(
                         #     extrapolation_penalty=1  # tuning factor (multiplies the weights of the points to the right of the ones used in the fitting)
                         # )
                         # if k is not None and r2 > best_r2 and n > 0 and (r2 > lin_r2_full or abs(n - 1) > lin_sub_level):
-                        if k is not None and r2 > best_r2 and n > 0 and abs(n - 1) > lin_sub_level:
+                        if k is not None and r2 > best_r2 and n > 1 and abs(n - 1) > lin_sub_level:
                             # FINDME 2
                             if r2>power_law_criterion: # use 99 with noise supression
                             # if r2>0.5: # 
