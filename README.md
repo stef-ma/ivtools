@@ -6,6 +6,12 @@
 
 Tools for processing nonlinear transport data for critical current measurements in pulsed magnetic fields. Designed for data acquired using the NHMFL LabActor Framework (based on National Instruments Actor Framework architecture).
 
+
+## License
+LANL Copyright No. C20099
+See parent repository for full license details: https://github.com/ffb-LANL/High-Magnetic-Field-Science-Toolset
+
+
 ---
 
 ## Features
@@ -35,7 +41,7 @@ Tools for processing nonlinear transport data for critical current measurements 
   - `matplotlib` (≥3.2)
   - `tqdm` (≥4.60)
 
----
+
 
 ## Installation
 
@@ -49,7 +55,7 @@ git clone https://github.com/stef-ma/ivtools
 cd ivtools
 pip install -e .
 ```
-
+---
 ## Example Workflow
 
 ```python
@@ -122,7 +128,7 @@ ivt.save_fitdata(                # Save fit data.
     origin=True
 )
 ```
-
+---
 ## Processing Pipeline
 Hooks allow you to inject custom processing logic at ```[specific pipeline stages]``` without modifying the core code. Perfect for experiment-specific corrections, quality checks, or custom analyses.
 ```
@@ -229,7 +235,7 @@ ivs, fits, ivf = ivt.process_ivf(
 | `post_fitting` | After each fit attempt (many times per segment) | Per-attempt result filtering | `dict` | `k`, `n`, `sigma_ic`, `sigma_n`, `r2`, `x_fit`, `y_fit`, `start`, `end`, `x`, `y`, `segment_index`, `field_avg`, `dBdt_avg`, `voltage_cutoff`, `segment`, `weight_power`, `weight_mode` |
 | `results` | After all segments processed (once per file) | File-level result corrections, batch filtering | `dict` | `fit_successes`, `I_cs`, `ks`, `bs`, `r2s`, `segments`, `segments_power`, `processed_segments`, `best_starts`, `best_ends`, `H_avgs`, `dBdt_avgs`, `I_cHs`, `dlen`, `sigmas_ic`, `sigmas_n` (all lists) |
 
-
+---
 ## Algorithm Details
 ### Critical Current Determination
       Method: Weighted least-squares power-law fit in log-log space
@@ -248,6 +254,7 @@ ivs, fits, ivf = ivt.process_ivf(
     Monotonicity: Non-monotonic voltage points replaced with NaN
     Noise Rejection: Points below noise_level removed before fitting
     Anchoring: Synthetic (I→0, V→0) point added for numerical stability
+---
 
 ## File Structure
 ```
@@ -261,13 +268,7 @@ ivtools/
 ├── fit_utils.py         # Utility functions (WLS, masking, etc.)
 └── hooks.py             # Hook system (ProcessingHooks class)
 ```
-## License
-LANL Copyright No. C20099
-See parent repository for full license details: https://github.com/ffb-LANL/High-Magnetic-Field-Science-Toolset
-
-## Citation
-If you use this software in published research, please cite
-[Add your preferred citation format here]
+---
 
 
 ## Common Issues
@@ -290,6 +291,9 @@ Verify calibrated resistor value.
 Reduce max_fit_points (default: 5).
 Process fewer samples per batch.
 Disable verbose=True for batch jobs.
+
+---
+---
 
 # IV Tools Processing Notebook
 
@@ -368,6 +372,9 @@ No manual IV segmentation is required.
 - The notebook uses widgets for interactive filtering and plotting; it works in Jupyter Notebook or JupyterLab. VSCode may duplicate outputs.
 - For batch processing, provide the experimental log (Excel) with sample, temperature, field, and orientation and other metadata to automate dataset identification.
 - All processed data can be saved and reused in subsequent analyses or shared with collaborators.
+
+---
+---
 
 ## Related Tools
 
