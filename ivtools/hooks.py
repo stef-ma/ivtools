@@ -107,6 +107,9 @@ class ProcessingHooks:
     def execute(self, stage: str, data, **context):
         """
         Execute all registered hooks for a stage.
+
+        IMPORTANT: Hooks should return a MODIFIED COPY of data,
+        not modify it in-place, to avoid reference contamination.
         
         Parameters
         ----------

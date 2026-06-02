@@ -377,15 +377,17 @@ FIT_PRESETS = {
         "n_pos_dBdt",
         "n_neg_dBdt",
         "pdx",
+        "fnames",
         "fit_start_idx",
         "fit_end_idx",
-        "fnames",
     ],
     "minimal": [
         "Field_T",
         "I_c_A",
         "pdx",
         "fnames",
+        "fit_start_idx",
+        "fit_end_idx",
     ],
     "minimal_expanded": [
         "Field_T",
@@ -396,6 +398,8 @@ FIT_PRESETS = {
         "k",
         "pdx",
         "fnames",
+        "fit_start_idx",
+        "fit_end_idx",
     ]
 }
 

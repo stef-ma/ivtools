@@ -143,10 +143,20 @@ def process_ivf(
                 weight_mode=weight_mode,
                 hooks=hooks
                 )
-            if len(processed_segments)>0:
-                processed_df = pd.concat(segments, ignore_index=True)
-                df['Processed Current [A]'] = processed_df['Current [A]']
-                df['Processed Voltage [V]'] = processed_df['Voltage [V]']
+            if len(processed_segments) > 0:
+                processed_df = pd.concat(processed_segments, ignore_index=True)
+                
+                # Validate lengths match before assignment
+                if len(processed_df) != len(df):
+                    print(f"[Error] Processed data length mismatch: "
+                        f"original={len(df)}, processed={len(processed_df)}")
+                    # Fallback: fill with NaN or skip processed columns
+                    df['Processed Current [A]'] = np.nan
+                    df['Processed Voltage [V]'] = np.nan
+                else:
+                    # Force positional assignment
+                    df['Processed Current [A]'] = processed_df['Current [A]'].values
+                    df['Processed Voltage [V]'] = processed_df['Voltage [V]'].values
         if w and verbose:
             print(f"[Warning] Fit warnings detected in processing {os.path.basename(fp)}.")
     

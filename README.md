@@ -1,6 +1,6 @@
 # IV Tools
 
-**Version:** 0.5.0  
+**Version:** 0.5.1  
 **Part of:** High Magnetic Field Science Toolset (LANL Copyright No. C20099)  
 **Repository:** https://github.com/stef-ma/ivtools
 

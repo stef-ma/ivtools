@@ -16,7 +16,7 @@ def fit_IV_for_Ic(
         linear_sub_criterion,
         power_law_criterion,
         min_fit_points=3, 
-        max_fit_points=5, 
+        max_fit_points=30, 
         noise_level=1.5e-5,
         lin_sub_level = None,
         weight_power=1,
@@ -71,7 +71,7 @@ def fit_IV_for_Ic(
 
         # 🪝 HOOK INJECTION POINT: [post_segmentation] ← Operate on segment DataFrame of V(I,B) datapoints (vars: *segment*, voltage_cutoff, segment_index)
         if hooks.has_hook('post_segmentation'): # passing every segment seems inefficient if not needed.
-            segment = hooks.execute('post_segmentation', segment, voltage_cutoff=voltage_cutoff, segment_index=i, lin_sub_level=lin_sub_level, linear_sub_criterion=linear_sub_criterion)
+            segment = hooks.execute('post_segmentation', segment.copy(deep=True), voltage_cutoff=voltage_cutoff, segment_index=i, lin_sub_level=lin_sub_level, linear_sub_criterion=linear_sub_criterion)
 
         H_avgs.append(np.nanmean(segment['Field [T]']))
         dBdt_avgs.append(np.nanmean(segment['dBdt [T/s]']))
@@ -100,6 +100,9 @@ def fit_IV_for_Ic(
 
         datapoints = len(x)
 
+        # Initialize with original data (will be overwritten if processing succeeds)
+        x0 = x.copy()
+        y0 = y.copy()
 
         cutoff_idx_array = np.where(y > voltage_cutoff)[0]
         if cutoff_idx_array.size == 0:
@@ -117,6 +120,10 @@ def fit_IV_for_Ic(
             dlen.append(datapoints)
             sigmas_ic.append(None)
             sigmas_n.append(None)
+            newseg = segment.copy(deep=True)
+            newseg['Current [A]'] = x0
+            newseg['Voltage [V]'] = y0
+            processed_segments.append(newseg)
             continue
 
         cutoff_idx = cutoff_idx_array[0]
@@ -212,6 +219,10 @@ def fit_IV_for_Ic(
                 dlen.append(datapoints)
                 sigmas_ic.append(None)
                 sigmas_n.append(None)
+                newseg = segment.copy(deep=True)
+                newseg['Current [A]'] = x0
+                newseg['Voltage [V]'] = y0
+                processed_segments.append(newseg)
                 continue
             # lin_r2_full = - np.inf
             for start in range(0,len(y)-1):
@@ -288,7 +299,7 @@ def fit_IV_for_Ic(
                             r2 = hook_data['r2']  
 
                         if k is not None and r2 > best_r2 and n > 1 and abs(n - 1) > lin_sub_level:
-                            if r2>power_law_criterion: # use 99 with noise supression
+                            if r2>power_law_criterion: 
                                 best_k = k
                                 best_n = n
                                 best_r2 = r2
@@ -336,33 +347,39 @@ def fit_IV_for_Ic(
 
 
         # Save Processed IV for analysis. Replace non monotonic points with NaN
-        len_adjusted_x = []
-        len_adjusted_y = []
-        ii = 0
-        # if len(y0)!=len(y):
-        #     print('alarm')
-        # # print('')
-        for el in keep_mask:
-            if not el:
-            # if el:
-                len_adjusted_y.append(np.nan)
-                len_adjusted_x.append(np.nan)
-                ii +=1
-            else:
-                len_adjusted_y.append(y0[ii])
-                len_adjusted_x.append(x0[ii])
-                ii +=1
-        # len_adjusted_x = x0[keep_mask]
-        # len_adjusted_y = y0[keep_mask]
-        # len_adjusted_x, len_adjusted_y = anchor_low_voltage(len_adjusted_x, len_adjusted_y, noise_level) 
-        # segment['Current [A]'] = len_adjusted_x
-        # segment['Voltage [V]'] = len_adjusted_y
-        # processed_segments.append(segment)
+        # # Build len_adjusted arrays with NaN for masked points 
+        # len_adjusted_x = []
+        # len_adjusted_y = []
+        # ii = 0
+        # for el in keep_mask:
+        #     if not el:
+        #     # if el:
+        #         len_adjusted_y.append(np.nan)
+        #         len_adjusted_x.append(np.nan)
+        #         ii +=1
+        #     else:
+        #         len_adjusted_y.append(y0[ii])
+        #         len_adjusted_x.append(x0[ii])
+        #         ii +=1
         # newseg = segment.copy(deep=True)
-        newseg = segment
-        newseg['Current [A]'] = len_adjusted_x
-        newseg['Voltage [V]'] = len_adjusted_y
+        # newseg['Current [A]'] = len_adjusted_x
+        # newseg['Voltage [V]'] = len_adjusted_y
+        # processed_segments.append(newseg)
+
+        # Keep all lin-subtracted values (no NaN masking)
+        newseg = segment.copy(deep=True)
+
+        # Validate array lengths match segment
+        if len(x0) == len(segment) and len(y0) == len(segment):
+            newseg['Current [A]'] = x0
+            newseg['Voltage [V]'] = y0
+        else:
+            # If mismatch, preserve original (unprocessed) values
+            print(f"[Warning] Segment {i}: len mismatch (segment={len(segment)}, "
+                f"x0={len(x0)}, y0={len(y0)}). Using original values.")
+
         processed_segments.append(newseg)
+
         # if fit_successful:
         #     print(f'Slices in processed segment:\n{segment["Voltage [V]"]}\n are {best_start,best_end} corresponding to {segment["Voltage [V]"].iloc[best_start]} and {segment["Voltage [V]"].iloc[best_end]}.')
 
