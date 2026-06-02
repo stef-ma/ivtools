@@ -12,6 +12,11 @@ LANL Copyright No. C20099
 See parent repository for full license details: https://github.com/ffb-LANL/High-Magnetic-Field-Science-Toolset
 
 
+## Citation
+
+If you use this software in published research, please cite the High Magnetic Field Science Toolset repository and acknowledge the National High Magnetic Field Laboratory.
+
+
 ---
 
 ## Features
