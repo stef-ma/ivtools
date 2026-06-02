@@ -1,10 +1,12 @@
+# ivtools/fitting.py
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import warnings
-import MultiPyVu as mpv
+# import MultiPyVu as mpv
 
 from . import fit_utils
+from .hooks import default_hooks
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -18,7 +20,8 @@ def fit_IV_for_Ic(
         noise_level=1.5e-5,
         lin_sub_level = None,
         weight_power=1,
-        weight_mode='x'
+        weight_mode='x',
+        hooks = None
         ):
     """
     Analyze I–V data to extract segments, perform power-law fitting,
@@ -41,8 +44,18 @@ def fit_IV_for_Ic(
     """
     if lin_sub_level is None:
         lin_sub_level=0.5
+    
+    if hooks is None:
+        hooks = default_hooks  # Use global registry by default
+
+    # 🪝 HOOK INJECTION POINT: [pre_segmentation] ← Operate on full DataFrame of V(I,B) datapoints (input: df, voltage_cutoff; output: df)
+    df = hooks.execute('pre_segmentation', df, voltage_cutoff=voltage_cutoff)
 
     segments = fit_utils.split_by_jump(df)
+
+
+
+
     fit_successes = []
     ks, bs, r2s, I_cs, I_cHs, simple_Ics = [], [], [], [], [], []
     H_avgs, dBdt_avgs = [], []
@@ -55,11 +68,35 @@ def fit_IV_for_Ic(
     sigmas_n = []
 
     for i,segment in enumerate(segments):
+
+        # 🪝 HOOK INJECTION POINT: [post_segmentation] ← Operate on segment DataFrame of V(I,B) datapoints (vars: *segment*, voltage_cutoff, segment_index)
+        if hooks.has_hook('post_segmentation'): # passing every segment seems inefficient if not needed.
+            segment = hooks.execute('post_segmentation', segment, voltage_cutoff=voltage_cutoff, segment_index=i, lin_sub_level=lin_sub_level, linear_sub_criterion=linear_sub_criterion)
+
         H_avgs.append(np.nanmean(segment['Field [T]']))
         dBdt_avgs.append(np.nanmean(segment['dBdt [T/s]']))
 
         x = segment['Current [A]'].to_numpy()
         y = segment['Voltage [V]'].to_numpy()
+
+        # 🪝 HOOK INJECTION POINT: [pre_linear_subtraction] → Operate on individual IV data arrays in dict form before lin_subtraction (vars: *hook_data* (dict) [x,y,segment_index,field_avg,dBdt_avg,voltage_cutoff,segment])
+        if hooks.has_hook('pre_linear_subtraction'):
+            ## packing
+            hook_data = {
+                'x': x,
+                'y': y,
+                'segment_index': i,
+                'field_avg': H_avgs[-1],
+                'dBdt_avg': dBdt_avgs[-1],
+                'voltage_cutoff': voltage_cutoff,
+                'segment':segment
+            }
+            ## executing
+            hook_data = hooks.execute('pre_linear_subtraction', hook_data)
+            ## unpacking
+            x = hook_data['x']
+            y = hook_data['y']
+            voltage_cutoff = hook_data['voltage_cutoff']
 
         datapoints = len(x)
 
@@ -95,6 +132,24 @@ def fit_IV_for_Ic(
             x0 = x.copy()
             y0 = y.copy()
 
+            # 🪝 HOOK INJECTION POINT: [post_linear_subtraction] → Operate on individual IV data arrays in dict form after lin_subtraction (vars: *hook_data* (dict) [x,y,segment_index,field_avg,dBdt_avg,voltage_cutoff,segment])
+            if hooks.has_hook('post_linear_subtraction'):
+                ## packing
+                hook_data = {
+                    'x': x,
+                    'y': y,
+                    'segment_index': i,
+                    'field_avg': H_avgs[-1],
+                    'dBdt_avg': dBdt_avgs[-1],
+                    'voltage_cutoff': voltage_cutoff,
+                    'segment':segment
+                }
+                ## executing
+                hook_data = hooks.execute('post_linear_subtraction', hook_data)
+                ## unpacking
+                x = hook_data['x']
+                y = hook_data['y']
+
             orig_indices = np.arange(len(x))
             # print(f'\n\n\n\nIndices originally:\n{orig_indices}')
 
@@ -117,7 +172,23 @@ def fit_IV_for_Ic(
             orig_indices = orig_indices[order]
             # print(f'Indices after sorting:\n{orig_indices}')
 
-        # if np.any(y > voltage_cutoff):
+            # 🪝 HOOK INJECTION POINT: [post_masking_and_anchoring] → Operate on individual IV data arrays in dict form after masking and anchor_low_voltage (vars: *hook_data* (dict) [x,y,segment_index,field_avg,dBdt_avg,voltage_cutoff,segment])
+            if hooks.has_hook('post_masking_and_anchoring'):
+                ## packing
+                hook_data = {
+                    'x': x,
+                    'y': y,
+                    'segment_index': i,
+                    'field_avg': H_avgs[-1],
+                    'dBdt_avg': dBdt_avgs[-1],
+                    'voltage_cutoff': voltage_cutoff,
+                    'segment':segment
+                }
+                ## executing
+                hook_data = hooks.execute('post_masking_and_anchoring', hook_data)
+                ## unpacking
+                x = hook_data['x']
+                y = hook_data['y']   
 
             # Find best linear fit to dataset to compare power law fit R2 against
             try: 
@@ -148,28 +219,79 @@ def fit_IV_for_Ic(
                 # for end in [len(y)-1]: #USED FOR UKAEA
                     if len(x[start:end]) < min_fit_points or len(x[start:end]) > max_fit_points:
                         continue
-                    else:
+                    else: 
+
                         x_fit = x[start:end]
                         y_fit = y[start:end]
 
-                        # k, n, ic = fit_utils.try_fit_power_law(x_fit, y_fit) # If old system, where cutoff is not needed.
+                        # 🪝 HOOK INJECTION POINT: [pre_fitting] → Operate on narrow data arrays during fitting attempts in dict form right before fitting logic (vars: *hook_data* (dict) [x_fit,y_fit,start,end,x,y,segment_index,field_avg,dBdt_avg,voltage_cutoff,segment,weight_power,weight_mode])
+                        if hooks.has_hook('pre_fitting'):
+                            ## packing
+                            hook_data = {
+                                'x_fit': x_fit,
+                                'y_fit': y_fit,
+                                'start': start,
+                                'end': end,
+                                'x': x,
+                                'y': y,
+                                'segment_index': i,
+                                'field_avg': H_avgs[-1],
+                                'dBdt_avg': dBdt_avgs[-1],
+                                'voltage_cutoff': voltage_cutoff,
+                                'segment':segment,
+                                'weight_power':weight_power,
+                                'weight_mode':weight_mode
+                            }
+                            ## executing
+                            hook_data = hooks.execute('pre_fitting', hook_data)
+                            ## unpacking
+                            x_fit = hook_data['x_fit']
+                            y_fit = hook_data['y_fit']  
+                            weight_power = hook_data['weight_power']
+                            weight_mode = hook_data['weight_mode']  
+                            voltage_cutoff = hook_data['voltage_cutoff']  
+
+
                         k, n, ic, sigma_ic, sigma_n = fit_utils.try_fit_power_law(x_fit, y_fit, voltage_criterion=voltage_cutoff, weight_power=weight_power,weight_mode=weight_mode)
                         r2 = fit_utils.compute_R2_weighted(x, y, k, n, weight_power,weight_mode) if k is not None and n is not None else -np.inf
-                        # r2 = fit_utils.compute_R2_weighted(x_fit, y_fit, k, n) if k is not None and n is not None else -np.inf
-                        # r2 = fit_utils.compute_R2_weighted_hybrid(
-                        #     x, y, k, n, 
-                        #     fit_window_indices=(start, end),
-                        #     extrapolation_penalty=1  # tuning factor (multiplies the weights of the points to the right of the ones used in the fitting)
-                        # )
-                        # if k is not None and r2 > best_r2 and n > 0 and (r2 > lin_r2_full or abs(n - 1) > lin_sub_level):
+
+                        # 🪝 HOOK INJECTION POINT: [post_fitting] → Operate on fit results (vars: *hook_data* (dict) [k,n,sigma_ic,sigma_n,r2,x_fit,y_fit,start,end,x,y,segment_index,field_avg,dBdt_avg,voltage_cutoff,segment,weight_power,weight_mode])
+                        if hooks.has_hook('post_fitting'):
+                            ## packing
+                            hook_data = {
+                                'k':k,
+                                'n':n,
+                                'sigma_ic':sigma_ic,
+                                'sigma_n':sigma_n,
+                                'r2':r2,
+                                'x_fit': x_fit,
+                                'y_fit': y_fit,
+                                'start': start,
+                                'end': end,
+                                'x': x,
+                                'y': y,
+                                'segment_index': i,
+                                'field_avg': H_avgs[-1],
+                                'dBdt_avg': dBdt_avgs[-1],
+                                'voltage_cutoff': voltage_cutoff,
+                                'segment':segment,
+                                'weight_power':weight_power,
+                                'weight_mode':weight_mode
+                            }
+                            ## executing
+                            hook_data = hooks.execute('post_fitting', hook_data)
+                            ## unpacking
+                            k = hook_data['k']
+                            n = hook_data['n']  
+                            sigma_ic = hook_data['sigma_ic']
+                            sigma_n = hook_data['sigma_n']  
+                            r2 = hook_data['r2']  
+
                         if k is not None and r2 > best_r2 and n > 1 and abs(n - 1) > lin_sub_level:
-                            # FINDME 2
                             if r2>power_law_criterion: # use 99 with noise supression
-                            # if r2>0.5: # 
                                 best_k = k
                                 best_n = n
                                 best_r2 = r2
-                                # best_Ic = ic if ic is not None else fit_utils.powerlaw_inverted(voltage_cutoff,k,n)
                                 best_Ic = fit_utils.powerlaw_inverted(voltage_cutoff,best_k,best_n)
                                 test_start = start
                                 test_end = end
@@ -177,7 +299,7 @@ def fit_IV_for_Ic(
                                 best_end = orig_indices[end]
                                 best_sigma_ic = sigma_ic
                                 best_sigma_n = sigma_n
-            # print (f'Best power law fit found for segment {i} in file {segment["File"].unique()[0]}: R² = {best_r2}.')
+            
         fit_successful = best_k is not None and best_n is not None
         fit_successes.append(fit_successful)
         if fit_successful:
@@ -265,6 +387,49 @@ def fit_IV_for_Ic(
         #         j+=1
         #     print(i,'|',a,'|',n,'|',c,'|',d,'|')
         # print('__________________________________')
+
+
+    # 🪝 HOOK INJECTION POINT: [results] → Operate on file-level processing results (vars: *hook_data* (dict) [fit_successes,I_cs,ks,bs,r2s,segments,segments_power,processed_segments,best_Starts,best_ends,H_avgs,dBdt+avgs,IcHs,dlens,sigmas_ic,sigmas_n])
+    if hooks.has_hook('results'):
+        ## packing
+        hook_data = {
+            'fit_successes':fit_successes, 
+            'I_cs':I_cs, 
+            'ks':ks, 
+            'bs':bs, 
+            'r2s':r2s, 
+            'segments':segments, 
+            'segments_power':segments_power, 
+            'processed_segments':processed_segments, 
+            'best_starts':best_starts, 
+            'best_ends':best_ends, 
+            'H_avgs':H_avgs, 
+            'dBdt_avgs':dBdt_avgs, 
+            'I_cHs':I_cHs, 
+            'dlen':dlen, 
+            'sigmas_ic':sigmas_ic, 
+            'sigmas_n':sigmas_n 
+        }
+        ## executing
+        hook_data = hooks.execute('results', hook_data)
+        ## unpacking
+        fit_successes=hook_data['fit_successes']
+        I_cs=hook_data['I_cs']
+        ks=hook_data['ks']
+        bs=hook_data['bs']
+        r2s=hook_data['r2s']
+        segments=hook_data['segments']
+        segments_power=hook_data['segments_power']
+        processed_segments=hook_data['processed_segments']
+        best_starts=hook_data['best_starts']
+        best_ends=hook_data['best_ends']
+        H_avgs=hook_data['H_avgs']
+        dBdt_avgs=hook_data['dBdt_avgs']
+        I_cHs=hook_data['I_cHs']
+        dlen=hook_data['dlen']
+        sigmas_ic=hook_data['sigmas_ic']
+        sigmas_n =hook_data['sigmas_n']
+ 
 
 
     return fit_successes, I_cs, ks, bs, r2s, segments, segments_power, processed_segments, best_starts, best_ends, H_avgs, dBdt_avgs, I_cHs, dlen, sigmas_ic, sigmas_n 

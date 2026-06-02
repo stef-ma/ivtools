@@ -1,9 +1,12 @@
+# ivtools/iv_io.py
 """
 IV_file.py
 ------------
 Defines the IV_File class for parsing LabActor TDMS waveform data,
 extracting current, voltage, field, timing, and metadata.
 """
+
+from .process import suppress_print
 
 from pathlib import Path
 import re
@@ -69,7 +72,9 @@ class IV_File:
         missing = required_channels - set(all_channels)
         if missing:
             self.passed = False
-            print(f'[Error] File {filepath} is missing channels: {missing}.')
+
+            with suppress_print(verbose):
+                print(f'[Error] File {filepath} is missing channels: {missing}.')
             return
 
         self.passed = True
@@ -102,13 +107,16 @@ class IV_File:
             try:
                 self.B, _, _, _ = self._load_channel_data('Field_fixed')
             except Exception:
-                print(f'[INFO] No Field_fixed found in {filepath}, using Field')
+                with suppress_print(verbose):
+                    print(f'[INFO] No Field_fixed found in {filepath}, using Field')
                 self.B, _, _, _ = self._load_channel_data('Field')
         elif isinstance(ppms_field, (int, float)):
             self.B = np.round(np.ones(len(self.I)) * ppms_field, 2)
         else:
             self.passed = False
-            print(f'[Error] File {filepath} is missing channels field value.')
+
+            with suppress_print(verbose):
+                print(f'[Error] File {filepath} is missing channels field value.')
             return
 
         # ------------------------------------------------------------------
@@ -535,7 +543,8 @@ def save_ivdata(
     # Save data rows (ensure columns order)
     raw_df.to_csv(raw_path, mode="a", header=False, index=False, columns=columns)
 
-    if verbose:
+
+    with suppress_print(verbose):
         print(f"Saved raw Origin-readable data to: {raw_path}")
 
 # -----------------------
@@ -627,5 +636,5 @@ def save_fitdata(
 
     fit_df.to_csv(fit_path, mode="a", header=False, index=False, columns=columns)
 
-    if verbose:
+    with suppress_print(verbose):
         print(f"Saved fit Origin-readable data to: {fit_path}")

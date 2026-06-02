@@ -1,3 +1,4 @@
+# ivtools/process.py
 import time
 import re
 import os
@@ -12,6 +13,7 @@ import pandas as pd
 from . import iv_io
 from . import fit_utils
 from . import fitting
+from .hooks import default_hooks
 
 @contextlib.contextmanager
 def suppress_print(verbose=True):
@@ -49,13 +51,29 @@ def process_ivf(
     lin_sub_level = None,
     center_fraction=0.5,
     weight_power=1,
-    weight_mode='x'
+    weight_mode='x',
+    hooks = None
     ):
     
     fname = os.path.basename(fp)
     
     if verbose:
         start = time.perf_counter()
+
+    if hooks is None:
+        hooks = default_hooks
+
+    # 🪝 HOOK INJECTION POINT: [ivf_processing] ← Operate on full tdms datastream in the form of an IV_File instance (gains are accounted for and current is converted) (vars: *ivf*, fp, sample, temperature, angle, tfield, magnet)
+    ivf = hooks.execute(
+        'ivf_processing', 
+        ivf,
+        fp=fp,
+        sample=sample,
+        temperature=temperature,
+        angle=angle,
+        tfield=tfield,
+        magnet=magnet,
+        )
 
     highs = ivf.tops
     lows = ivf.troths
@@ -78,7 +96,7 @@ def process_ivf(
         IV_pulse_iteration = 0
         for j, top in enumerate(highs):
             with suppress_print(verbose):
-                result, *_ = fit_utils.process_IV_pulse(ivf, top, lows[2 * j], lows[2 * j + 1],center_fraction=center_fraction)
+                result, *_ = fit_utils.process_IV_pulse(ivf, top, lows[2 * j], lows[2 * j + 1],center_fraction=center_fraction,hooks=hooks)
             # IV Pulse iteration
             I = result['Current [A]']
             if I>=last_current:
@@ -122,7 +140,8 @@ def process_ivf(
                 noise_level = noise_level,
                 lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff,
                 weight_power=weight_power,
-                weight_mode=weight_mode
+                weight_mode=weight_mode,
+                hooks=hooks
                 )
             if len(processed_segments)>0:
                 processed_df = pd.concat(segments, ignore_index=True)

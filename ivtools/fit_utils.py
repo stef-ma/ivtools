@@ -1,3 +1,4 @@
+# ivtools/fit_utils.py
 import numpy as np
 from scipy.signal import savgol_filter
 
@@ -156,31 +157,31 @@ def safe_mean(V): # Avoid extra math
 
 
 
-def process_IV_pulse(iv_file,top,left,right,center_fraction):
+def process_IV_pulse(ivf,top,left,right,center_fraction,hooks):
     '''
     Extracts the voltage, current, field and temperature for a single IV pulse iv_file class.
     '''
-    lROI,hROI = find_ROI(iv_file,top, center_fraction)
+    lROI,hROI = find_ROI(ivf,top, center_fraction)
 
-    error_std = iv_file.noise_std
-    error_rms = iv_file.noise_rms
+    error_std = ivf.noise_std
+    error_rms = ivf.noise_rms
 
-    I = np.mean(iv_file.I[lROI:hROI])
-    B = np.mean(iv_file.B[lROI:hROI])
-    Bdiff = np.mean(np.diff(iv_file.B[lROI:hROI]))
-    tdiff = np.mean(np.diff(iv_file.t[lROI:hROI]))
+    I = np.mean(ivf.I[lROI:hROI])
+    B = np.mean(ivf.B[lROI:hROI])
+    Bdiff = np.mean(np.diff(ivf.B[lROI:hROI]))
+    tdiff = np.mean(np.diff(ivf.t[lROI:hROI]))
     dBdt = Bdiff/tdiff
     # dBdt = np.mean(np.diff(np.array([datafile.t[lROI:hROI],datafile.B[lROI:hROI]])))
     
-    T = iv_io.extract_numeric_temperature(iv_file.T)
+    T = iv_io.extract_numeric_temperature(ivf.T)
     
-    left_lROI,left_hROI = find_ROI(iv_file,left, center_fraction)
-    right_lROI, right_hROI = find_ROI(iv_file,right, center_fraction)
+    left_lROI,left_hROI = find_ROI(ivf,left, center_fraction)
+    right_lROI, right_hROI = find_ROI(ivf,right, center_fraction)
 
 
-    V, processed_V = safe_mean(iv_file.V[lROI:hROI])
-    leftV, _ = safe_mean(iv_file.V[left_lROI:left_hROI])
-    rightV, _ = safe_mean(iv_file.V[right_lROI:right_hROI])
+    V, processed_V = safe_mean(ivf.V[lROI:hROI])
+    leftV, _ = safe_mean(ivf.V[left_lROI:left_hROI])
+    rightV, _ = safe_mean(ivf.V[right_lROI:right_hROI])
     V = V - (leftV+rightV)/2 # 1st option
 
     result = {
@@ -195,7 +196,34 @@ def process_IV_pulse(iv_file,top,left,right,center_fraction):
         'rROI' : hROI,
         'Denoised Voltage Array [V]': processed_V
     }
-    # print(leftV,V,rightV)
+    # 🪝 HOOK INJECTION POINT: [conversion] → Operate on TDMS to V(I,B) DataFrame conversion results (vars: *hook_data* (dict) [results,ivf,top,left,right,I,V,B,dBdt,T])
+    if hooks.has_hook('conversion'):
+        ## packing
+        hook_data = {
+            'result': result,
+            'ivf': ivf,
+            'top': top,
+            'left': left,
+            'right': right,
+            'I':I,
+            'V':V,
+            'B':B,
+            'dBdt':dBdt,
+            'T':T
+        }
+        ## executing
+        hook_data = hooks.execute('conversion', hook_data)
+        ## unpacking
+        result = hook_data['result']
+        ivf = hook_data['ivf']
+        top = hook_data['top']
+        left = hook_data['left']
+        right = hook_data['right']
+        I = hook_data['I']
+        V = hook_data['V']
+        B = hook_data['B']
+        dBdt = hook_data['dBdt']
+        T = hook_data['T']
     return result,I,V,B,dBdt,T
 
 
