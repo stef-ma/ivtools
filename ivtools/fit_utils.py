@@ -719,13 +719,15 @@ def masking(x,y,noise_level):
     keep_mask = np.ones(len(y), dtype=bool)
     application_mask = np.ones(len(y), dtype=bool)
 
+    nan_mask = ~(np.isnan(x) | np.isnan(y))
 
     # # mask non monotonically increasing points
     # monotonic_mask = np.concatenate(([True], np.diff(y) >= 0))
     # y = y[monotonic_mask]
     # x = x[monotonic_mask]
 
-    monotonic_mask = np.concatenate([[True], np.diff(y) >= 0]) 
+    monotonic_mask_y = np.concatenate([[True], np.diff(y) >= 0]) 
+    monotonic_mask_x = np.concatenate([[True], np.diff(x) >= 0]) 
 
     # monotonic_mask = [True]
     # ydxmax = y[0]
@@ -742,8 +744,8 @@ def masking(x,y,noise_level):
     # monotonic_mask = np.ones(len(y),dtype=bool)
 
     # Update global mask:
-    keep_mask = keep_mask & monotonic_mask
-    application_mask = application_mask & monotonic_mask
+    keep_mask = keep_mask & monotonic_mask_y & monotonic_mask_x & nan_mask
+    application_mask = application_mask & monotonic_mask_y & monotonic_mask_x
 
     # # Apply local mask:
     # x = x[monotonic_mask]

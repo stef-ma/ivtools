@@ -136,8 +136,6 @@ def fit_IV_for_Ic(
             # lin_sub_level = lin_sub_level if lin_sub_level is not None else voltage_cutoff
             y = fit_utils.lin_subtraction(x,y,lin_sub_level,linear_sub_criterion)
            
-            x0 = x.copy()
-            y0 = y.copy()
 
             # 🪝 HOOK INJECTION POINT: [post_linear_subtraction] → Operate on individual IV data arrays in dict form after lin_subtraction (vars: *hook_data* (dict) [x,y,segment_index,field_avg,dBdt_avg,voltage_cutoff,segment])
             if hooks.has_hook('post_linear_subtraction'):
@@ -156,6 +154,9 @@ def fit_IV_for_Ic(
                 ## unpacking
                 x = hook_data['x']
                 y = hook_data['y']
+
+            x0 = x.copy()
+            y0 = y.copy()
 
             orig_indices = np.arange(len(x))
             # print(f'\n\n\n\nIndices originally:\n{orig_indices}')

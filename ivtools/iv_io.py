@@ -303,6 +303,7 @@ COLUMN_META_RAW = {
     "Current_A":              ("I", "A"),
     "Voltage_V":              ("V", "V"),
     "Vavg_V":                 ("Uncorrected Vavg", "V"),
+    "Processed_Current_A":    ("Processed Current", "A"),
     "Processed_Voltage_V":    ("Processed Voltage", "V"),
     "Field_T":                ("Field", "T"),
     "dBdt":                   ("dH/dt", "T/s"),
@@ -334,6 +335,7 @@ COLUMN_META_RAW_ORIGIN = {
     "Voltage_V":              ("V", "V"),
     "Vavg_V":                 ("Uncorrected V\-(avg)", "V"),
     "Processed_Voltage_V":    ("Processed Voltage", "V"),
+    "Processed_Current_A":    ("Processed Current", "A"),
     "Field_T":                ("\g(m)\-(0)H", "T"),
     "dBdt":                   ("dH/dt", "T/s"),
     "pdx":                    ("IV idx", ""),
@@ -408,6 +410,7 @@ IV_PRESETS = {
         "Current_A",
         "Voltage_V",
         "Vavg_V",
+        "Processed_Current_A",
         "Processed_Voltage_V",
         "Field_T",
         "dBdt",
@@ -419,6 +422,7 @@ IV_PRESETS = {
         "time_s",
         "Current_A",
         "Voltage_V",
+        "Processed_Current_A",
         "Processed_Voltage_V",
         "Field_T",
         "dBdt",
@@ -429,6 +433,7 @@ IV_PRESETS = {
         "time_s",
         "Current_A",
         "Voltage_V",
+        "Processed_Current_A",
         "Processed_Voltage_V",
         "Field_T",
         "dBdt",
@@ -509,6 +514,7 @@ def save_ivdata(
     raw_df["Current_A"]           = raw_df.get("Current [A]", raw_df.get("Current_A", np.nan))
     raw_df["Voltage_V"]           = raw_df.get("Voltage [V]", raw_df.get("Voltage_V", np.nan))
     raw_df["Vavg_V"]              = raw_df.get("Vavg [V]", raw_df.get("Vavg_V", np.nan))
+    raw_df["Processed_Current_A"] = raw_df.get("Processed Current [A]", raw_df.get("Processed_Current_A", np.nan))
     raw_df["Processed_Voltage_V"] = raw_df.get("Processed Voltage [V]", raw_df.get("Processed_Voltage_V", np.nan))
     raw_df["Field_T"]             = raw_df.get("Field [T]", raw_df.get("Field_T", np.nan))
     raw_df["dBdt"]                = raw_df.get("dBdt [T/s]", raw_df.get("dBdt", np.nan))
