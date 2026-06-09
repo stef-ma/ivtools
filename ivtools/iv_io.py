@@ -278,6 +278,7 @@ class IV_File:
 
         return lows, highs
 
+
 def extract_numeric_temperature(temp):
     """
     Extract the numeric part from a temperature value that might be a number or a string containing a number.
@@ -295,6 +296,30 @@ def extract_numeric_temperature(temp):
         if match:
             return float(match.group())
     return None
+
+def sanitize_metadata(value):
+    """
+    Remove or replace characters that interfere with CSV parsing.
+    
+    Args:
+        value: Any metadata value (string, number, etc.)
+    
+    Returns:
+        str: Sanitized string safe for CSV headers
+    """
+    if value is None:
+        return ""
+    
+    # Convert to string
+    value_str = str(value)
+    
+    # Replace commas with semicolons (or underscores, or remove them)
+    value_str = value_str.replace(",", ";")
+    
+    # Optionally also sanitize pipe characters if they appear
+    # value_str = value_str.replace("|", "/")
+    
+    return value_str
 
 # -----------------------
 # Column metadata
@@ -531,6 +556,15 @@ def save_ivdata(
             if c not in raw_df.columns:
                 raw_df[c] = np.nan
 
+    # Sanitize metadata before building header comment
+    sample = sanitize_metadata(sample)
+    temperature = sanitize_metadata(temperature)
+    tfield = sanitize_metadata(tfield)
+    orientation = sanitize_metadata(orientation)
+    magnet = sanitize_metadata(magnet)  # <-- This is the key fix
+    fname = sanitize_metadata(fname)
+    
+
     # output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
     output_base = f"{sample}_IV_{temperature}K_{tfield}T_{orientation}deg_{fname}"
     if origin:
@@ -626,6 +660,14 @@ def save_fitdata(
         for c in missing:
             if c not in fit_df.columns:
                 fit_df[c] = np.nan
+
+    # Sanitize metadata
+    sample = sanitize_metadata(sample)
+    temperature = sanitize_metadata(temperature)
+    tfield = sanitize_metadata(tfield)
+    orientation = sanitize_metadata(orientation)
+    magnet = sanitize_metadata(magnet)
+    fname = sanitize_metadata(fname)
 
     # output_base = f"{fname}_{sample}_{orientation}_{magnet}_{tfield}T_{temperature}K"
     output_base = f"{sample}_IcH_{temperature}K_{tfield}T_{orientation}deg_{fname}"
