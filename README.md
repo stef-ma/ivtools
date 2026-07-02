@@ -98,7 +98,7 @@ ivs, fits, ivf = ivt.process_ivf(
                                  # optional
                                  magnet='59T Mid Pulse',          # Magnet name used in experiment (default = 'Mid Pulse')
                                  verbose=False,                   # default = False
-                                 lin_sub_level=0.5,               # |slope - 1| < lin_sub_level in log(V) vs log(I) is considered for background removal (default = 0.5)
+                                 lin_sub_level=0.05,               # Datapoints below np.abs(np.ptp(V))*lin_sub_level are considered for background removal (default = 0.05)
                                  center_fraction=0.5,             # Fractional width of flat-top of square wave signal region in datastream used to convert V(t) into V(I,B). (default = 0.5)
                                  weight_power=1,                  # Exponent applied to weight mechanism to force fit to higher current datapoints. (1→natural)
                                  weight_mode='x'                  # Weight mechanism ('x'→current, 'index'→point index in IV). (default = 'x')

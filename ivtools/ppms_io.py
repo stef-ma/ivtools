@@ -262,6 +262,7 @@ class ACT_File:
                 drop_factor=drop_factor
             )
             
+
             n_segments = np.sum(iv_counter == 0)
             
             if verbose:
@@ -365,7 +366,7 @@ class ACT_File:
         
         return fits
     
-    def _detect_iv_segments(self, I, t=None, drop_factor=0.5, time_gap_threshold=2):
+    def _detect_iv_segments(self, I, t=None, drop_factor=0.9, time_gap_threshold=2):
         """
         Detect IV segment boundaries based on current drops and time gaps.
         
@@ -412,60 +413,74 @@ class ACT_File:
         quadrant_counter = 0
         running_max = I[0]
         running_min = I[0]
+        skip_inflection = 0
         
         for i in range(len(I)):
-            new_IV=False
+            new_IV = False
+            
             if i > 0:
-
-                # ────────────────────────────────────────────────────────
-                # 1. TIME GAP indicates new IV (if time available)
-                # ────────────────────────────────────────────────────────
-                if t is not None and i > 0:
+                # ─────────────────────────────────────────────
+                # 1. TIME GAP → new IV
+                # ─────────────────────────────────────────────
+                if t is not None:
                     dt = t[i] - t[i-1]
                     if dt > time_gap_threshold:
-                        # Large time gap → force new IV
                         iv_counter = 0
                         quadrant_counter = 0
-                        new_IV=True
+                        new_IV = True
+                        skip_inflection = 3
+                
                 if not new_IV:
-                    # ────────────────────────────────────────────────────────
-                    # 3. CURRENT DROP indicates new IV
-                    # ────────────────────────────────────────────────────────
+                    # ─────────────────────────────────────────────
+                    # 2. CURRENT DROP → new IV
+                    # ─────────────────────────────────────────────
                     abs_I = np.abs(I[i])
                     abs_I_prev = np.abs(I[i-1])
                     running_max = max(running_max, abs_I)
                     running_min = min(running_min, abs_I)
                     full_range = running_max - running_min
                     
-                    # Detect a reset drop of more than 'drop_factor' of current span
-                    if np.abs(abs_I-abs_I_prev) > drop_factor * full_range and iv_counter!=0:
-                        # Start new segment
+                    if np.abs(abs_I - abs_I_prev) > drop_factor * full_range and iv_counter != 0:
                         iv_counter = 0
-                        quadrant_counter = 0 
-                        
-                        # Reset range tracking
+                        quadrant_counter = 0
                         running_max = abs_I
                         running_min = abs_I
-                        new_IV=True
-
+                        new_IV = True
+                        skip_inflection = 3
+                    
                     else:
-                        # ────────────────────────────────────────────────────────
-                        # 3. CURRENT INFLECTION indicates new quadrant
-                        # ────────────────────────────────────────────────────────
-                        if i>2:
-                            dI_curr = np.sign(I[i]-I[i-1])
-                            dI_prev = np.sign(I[i-1]-I[i-2])
-                            if not dI_curr!=dI_prev and dI_curr != 0:
+                        # ─────────────────────────────────────────────
+                        # 3. ZERO CROSSING → new segment
+                        # ─────────────────────────────────────────────
+                        I_sign_curr = np.sign(I[i])
+                        I_sign_prev = np.sign(I[i-1])
+                        
+                        # Sign change in current (excluding transitions through zero)
+                        if (I_sign_curr != I_sign_prev and I_sign_prev!=0):
+                            quadrant_counter = 0
+                        
+                        # ─────────────────────────────────────────────
+                        # 4. INFLECTION → new segment
+                        # ─────────────────────────────────────────────
+                        elif i > 2 and skip_inflection == 0:
+                            dI_curr = np.sign(I[i] - I[i-1])
+                            dI_prev = np.sign(I[i-1] - I[i-2])
+                            if dI_curr != dI_prev and dI_curr != 0:
                                 quadrant_counter = 0
                             else:
-                                quadrant_counter+=1
-
-                        iv_counter+=1
+                                quadrant_counter += 1
+                        else:
+                            quadrant_counter += 1
+                        
+                        iv_counter += 1
+            
+            # Decrement skip counter
+            if skip_inflection > 0:
+                skip_inflection -= 1
             
             # Assign values
             iv_pnums[i] = iv_counter
             quadrant_pnums[i] = quadrant_counter
-            
         
         return iv_pnums, quadrant_pnums
     
@@ -595,4 +610,106 @@ class ACT_File:
                     print(f"[Info] Converted '{col}': {n_converted} values, {n_failed} NaN")
         
         return df
-
+    def split_act_by_conditions(self, orientation_tol=1.0, temperature_tol=0.5, verbose=False):
+        """
+        Split ACT_File data by experimental conditions (orientation, temperature).
+        
+        Groups data points with similar T and θ, then calculates median values
+        for each group. This allows processing mixed-condition ACT files through
+        the pipeline (which expects fixed T/θ per measurement).
+        
+        Parameters
+        ----------
+        act : ACT_File
+            Loaded PPMS IV measurement
+        orientation_tol : float, default=1.0
+            Clustering tolerance for orientation (degrees)
+        temperature_tol : float, default=0.5
+            Clustering tolerance for temperature (K)
+        verbose : bool
+            Print discovered condition groups
+            
+        Returns
+        -------
+        list of dict
+            Each dict contains:
+            - 'mask': boolean array for filtering act.df
+            - 'orientation': median orientation (deg), rounded to 2 decimals
+            - 'temperature': median temperature (K), rounded to 2 decimals
+            - 'field': median field (T), rounded to 4 decimals
+            - 'n_points': number of data points in group
+        """
+        
+        # Extract condition arrays
+        if isinstance(self.orientation, (int, float)):
+            orientations = np.full(len(self.T), self.orientation)
+        else:
+            orientations = np.asarray(self.orientation)
+        
+        temperatures = np.asarray(self.T)
+        fields = np.asarray(self.B)
+        
+        # ============================================================
+        # CLUSTERING BY ORIENTATION
+        # ============================================================
+        unique_orientations = []
+        orientation_groups = []
+        
+        for i, ori in enumerate(orientations):
+            # Find existing group within tolerance
+            matched = False
+            for group_ori, group_indices in zip(unique_orientations, orientation_groups):
+                if abs(ori - group_ori) < orientation_tol:
+                    group_indices.append(i)
+                    matched = True
+                    break
+            
+            if not matched:
+                # Create new orientation group
+                unique_orientations.append(ori)
+                orientation_groups.append([i])
+        
+        # ============================================================
+        # SUB-CLUSTERING BY TEMPERATURE (within each orientation)
+        # ============================================================
+        condition_groups = []
+        
+        for ori_median, ori_indices in zip(unique_orientations, orientation_groups):
+            temps_in_ori = temperatures[ori_indices]
+            
+            unique_temps = []
+            temp_subgroups = []
+            
+            for j, (global_idx, temp) in enumerate(zip(ori_indices, temps_in_ori)):
+                matched = False
+                for group_temp, group_indices in zip(unique_temps, temp_subgroups):
+                    if abs(temp - group_temp) < temperature_tol:
+                        group_indices.append(global_idx)
+                        matched = True
+                        break
+                
+                if not matched:
+                    unique_temps.append(temp)
+                    temp_subgroups.append([global_idx])
+            
+            # Store combined conditions WITH ROUNDING ← KEY FIX!
+            for temp_indices in temp_subgroups:
+                mask = np.zeros(len(temperatures), dtype=bool)
+                mask[temp_indices] = True
+                
+                condition_groups.append({
+                    'mask': mask,
+                    'orientation': np.round(np.median(orientations[mask]), 2),  # ← Round to 2 decimals
+                    'temperature': np.round(np.median(temperatures[mask]), 2),  # ← Round to 2 decimals
+                    'field': np.round(np.median(np.abs(fields[mask])), 4),     # ← Round to 4 decimals
+                    'n_points': len(temp_indices)
+                })
+        
+        if verbose:
+            print(f"[Info] Detected {len(condition_groups)} experimental conditions:")
+            for i, cond in enumerate(condition_groups):
+                print(f"  Group {i}: T={cond['temperature']:.2f} K, "
+                    f"θ={cond['orientation']:.1f}°, H={cond['field']:.2f} T "
+                    f"({cond['n_points']} points)")
+        
+        return condition_groups
