@@ -758,143 +758,14 @@ def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75):
 
 
 
-# def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75): # Legacy
-#     """
-#     Identify and subtract a linear background using log–log slope deviation.
-    
-#     **New behavior**: 
-#     - Safer offset calculation (avoids log(0))
-#     - Fallback to voltage-threshold method if no linear regime found
-#     - Early exit for sparse data
-#     """
-    
-#     # Early exits
-#     if linear_sub_criterion >= 1.0 or cutoff <= 0:
-#         print(f'[WARNING] Linear subtraction disabled by user params.')
-#         return y
-    
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-    
-#     # Check quadrant
-#     is_quad3 = np.mean(x) < 0
-    
-#     # Basic masking
-#     mask = (x != 0) & (y != 0) & np.isfinite(x) & np.isfinite(y)
-#     x0 = x[mask]
-#     y0 = y[mask]
-    
-#     if len(x0) < 3:  # ← Need at least 3 points for meaningful slope
-#         print(f'[WARNING] Too few points ({len(x0)}) for linear subtraction.')
-#         return y
-    
-#     # ============================================================
-#     # SAFE OFFSET CALCULATION (key fix!)
-#     # ============================================================
-#     if not is_quad3:
-#         y_range = np.ptp(y0)  # peak-to-peak range
-#         prov_offset = np.min(y0) - 0.01 * y_range  # ← 1% margin below min
-#     else:
-#         y_range = np.ptp(y0)
-#         prov_offset = np.max(y0) + 0.01 * y_range  # ← 1% margin above max
-    
-#     shifted_y = y0 - prov_offset
-    
-#     # Log-log slope calculation
-#     logx = np.log(np.abs(x0))
-#     logy = np.log(np.abs(shifted_y))
-    
-#     if not np.all(np.isfinite(logx)) or not np.all(np.isfinite(logy)):
-#         print(f'[WARNING] Non-finite values in log-space after offset correction.')
-#         return y
-    
-#     slope = np.gradient(logy, logx)
-    
-#     # ============================================================
-#     # METHOD 1: Slope-based detection (original method)
-#     # ============================================================
-#     good = (np.abs(slope) - 1) <= cutoff
-#     idx = np.argsort(np.abs(x0))
-    
-#     max_bad = 3
-#     bad = 0
-#     last_good_idx = None
-    
-#     for i, g in enumerate(good[idx]):  # ← Iterate in sorted order
-#         if g:
-#             last_good_idx = i
-#             bad = 0
-#         else:
-#             bad += 1
-#             if bad >= max_bad:
-#                 break
-    
-#     # ============================================================
-#     # METHOD 2: Fallback for sparse data (NEW!)
-#     # ============================================================
-#     if last_good_idx is None:
-#         print(f'[INFO] No slope-based linear region found. returning...')
-#         return y
-#         #print(f'[INFO] No slope-based linear region found. Trying voltage-threshold fallback...')
-        
-#         # Find points below 10% of max voltage (likely pre-transition)
-#         #voltage_threshold = 0.1 * np.max(np.abs(y0))
-#         #low_v_mask = np.abs(y0) < voltage_threshold
-#         #
-#         #if np.sum(low_v_mask) >= 2:  # Need at least 2 points
-#         #    x_lin = x0[low_v_mask]
-#         #    y_lin = y0[low_v_mask]
-#         #    
-#         #    print(f'[INFO] Using {len(x_lin)} low-voltage points for linear fit.')
-#         #else:
-#         #    print(f'[WARNING] Fallback also failed. No linear subtraction applied.')
-#         #    return y
-#     else:
-#         # Original method succeeded
-#         lin_idx = idx[:last_good_idx + 1]
-#         x_lin = x0[lin_idx]
-#         y_lin = y0[lin_idx]
-    
-#     # ============================================================
-#     # FIT AND SUBTRACT
-#     # ============================================================
-#     try:
-#         from scipy.stats import linregress
-#         res = linregress(x_lin, y_lin)
-#         p = np.array([res.slope, res.intercept])
-#     except Exception as e:
-#         print(f'[WARNING] Linear fit failed: {e}')
-#         return y
-    
-#     # Quality check
-#     y_pred = np.polyval(p, x_lin)
-#     ss_res = np.sum((y_lin - y_pred)**2)
-#     ss_tot = np.sum((y_lin - np.mean(y_lin))**2)
-    
-#     if ss_tot == 0:
-#         print(f'[WARNING] Degenerate linear fit (zero variance).')
-#         return y
-    
-#     r2 = 1 - ss_res / ss_tot
-#     if r2 < linear_sub_criterion:
-#         print(f'[WARNING] Poor linear fit (R²={r2:.3f} < {linear_sub_criterion}).')
-#         return y
-    
-#     # Apply correction
-#     y_corr = y - np.polyval(p, x)
-#     print(f'[INFO] Successful linear subtraction! (R²={r2:.3f}, slope={p[0]:.2e})')
-    
-#     return y_corr
-
-def lin_subtraction(x, y, cutoff=0.05, linear_sub_criterion=0.75):
+def lin_subtraction(x, y, cutoff=0.15, linear_sub_criterion=0.75): # Legacy
     """
-    Identify and subtract a linear background using derivative threshold detection.
+    Identify and subtract a linear background using log–log slope deviation.
     
-    **Method**: 
-    - Calculates fractional change in voltage between consecutive points
-    - Finds where change exceeds cutoff * ptp(y) 
-    - Fits linear background to pre-transition region
-    - Subtracts if R² > linear_sub_criterion
+    **New behavior**: 
+    - Safer offset calculation (avoids log(0))
+    - Fallback to voltage-threshold method if no linear regime found
+    - Early exit for sparse data
     """
     
     # Early exits
@@ -905,53 +776,84 @@ def lin_subtraction(x, y, cutoff=0.05, linear_sub_criterion=0.75):
     x = np.asarray(x)
     y = np.asarray(y)
     
+    # Check quadrant
+    is_quad3 = np.mean(x) < 0
+    
     # Basic masking
     mask = (x != 0) & (y != 0) & np.isfinite(x) & np.isfinite(y)
     x0 = x[mask]
     y0 = y[mask]
     
-    if len(x0) < 3:
+    if len(x0) < 3:  # ← Need at least 3 points for meaningful slope
         print(f'[WARNING] Too few points ({len(x0)}) for linear subtraction.')
         return y
     
-    # Sort by absolute current (low to high)
-    idx = np.argsort(np.abs(x0))
-    x_sorted = x0[idx]
-    y_sorted = y0[idx]
-    
     # ============================================================
-    # DERIVATIVE-BASED TRANSITION DETECTION (FIXED!)
+    # SAFE OFFSET CALCULATION (key fix!)
     # ============================================================
-    # Calculate absolute change in voltage between consecutive points
-    delta_y = np.abs(np.diff(y_sorted))
-    
-    # Threshold: cutoff * peak-to-peak range
-    y_range = np.ptp(y_sorted)
-    threshold = cutoff * y_range
-    
-    # Find where change exceeds threshold
-    # Note: delta_y has length n-1, so indices refer to the START of each segment
-    transition_mask = delta_y > threshold
-    
-    if not np.any(transition_mask):
-        # No transition found - entire curve might be linear
-        print(f'[INFO] No transition detected (Δy < {threshold:.2e} V). Using all points.')
-        x_lin = x_sorted
-        y_lin = y_sorted
+    if not is_quad3:
+        y_range = np.ptp(y0)  # peak-to-peak range
+        prov_offset = np.min(y0) - 0.01 * y_range  # ← 1% margin below min
     else:
-        # First segment where transition occurs
-        transition_idx = np.where(transition_mask)[0][0]
+        y_range = np.ptp(y0)
+        prov_offset = np.max(y0) + 0.01 * y_range  # ← 1% margin above max
+    
+    shifted_y = y0 - prov_offset
+    
+    # Log-log slope calculation
+    logx = np.log(np.abs(x0))
+    logy = np.log(np.abs(shifted_y))
+    
+    if not np.all(np.isfinite(logx)) or not np.all(np.isfinite(logy)):
+        print(f'[WARNING] Non-finite values in log-space after offset correction.')
+        return y
+    
+    slope = np.gradient(logy, logx)
+    
+    # ============================================================
+    # METHOD 1: Slope-based detection (original method)
+    # ============================================================
+    good = (np.abs(slope) - 1) <= cutoff
+    idx = np.argsort(np.abs(x0))
+    
+    max_bad = 3
+    bad = 0
+    last_good_idx = None
+    
+    for i, g in enumerate(good[idx]):  # ← Iterate in sorted order
+        if g:
+            last_good_idx = i
+            bad = 0
+        else:
+            bad += 1
+            if bad >= max_bad:
+                break
+    
+    # ============================================================
+    # METHOD 2: Fallback for sparse data (NEW!)
+    # ============================================================
+    if last_good_idx is None:
+        print(f'[INFO] No slope-based linear region found. returning...')
+        return y
+        #print(f'[INFO] No slope-based linear region found. Trying voltage-threshold fallback...')
         
-        # transition_idx is the start of the first "big jump" segment
-        # So include points 0 through transition_idx (inclusive)
-        if transition_idx < 1:
-            print(f'[WARNING] Transition at start of curve. No linear region to fit.')
-            return y
-        
-        # Linear region is everything up to (not including) the transition
-        x_lin = x_sorted[:transition_idx + 1]
-        y_lin = y_sorted[:transition_idx + 1]
-        print(f'[INFO] Linear region: {len(x_lin)}/{len(x_sorted)} points (Δy threshold: {threshold:.2e} V)')
+        # Find points below 10% of max voltage (likely pre-transition)
+        #voltage_threshold = 0.1 * np.max(np.abs(y0))
+        #low_v_mask = np.abs(y0) < voltage_threshold
+        #
+        #if np.sum(low_v_mask) >= 2:  # Need at least 2 points
+        #    x_lin = x0[low_v_mask]
+        #    y_lin = y0[low_v_mask]
+        #    
+        #    print(f'[INFO] Using {len(x_lin)} low-voltage points for linear fit.')
+        #else:
+        #    print(f'[WARNING] Fallback also failed. No linear subtraction applied.')
+        #    return y
+    else:
+        # Original method succeeded
+        lin_idx = idx[:last_good_idx + 1]
+        x_lin = x0[lin_idx]
+        y_lin = y0[lin_idx]
     
     # ============================================================
     # FIT AND SUBTRACT
@@ -974,16 +876,114 @@ def lin_subtraction(x, y, cutoff=0.05, linear_sub_criterion=0.75):
         return y
     
     r2 = 1 - ss_res / ss_tot
-    
     if r2 < linear_sub_criterion:
         print(f'[WARNING] Poor linear fit (R²={r2:.3f} < {linear_sub_criterion}).')
         return y
     
-    # Apply correction to ORIGINAL array
+    # Apply correction
     y_corr = y - np.polyval(p, x)
-    print(f'[INFO] Successful linear subtraction! (R²={r2:.3f}, slope={p[0]:.2e}, bg points: {len(x_lin)})')
+    print(f'[INFO] Successful linear subtraction! (R²={r2:.3f}, slope={p[0]:.2e})')
     
     return y_corr
+
+# def lin_subtraction(x, y, cutoff=0.05, linear_sub_criterion=0.75):
+#     """
+#     Identify and subtract a linear background using derivative threshold detection.
+    
+#     **Method**: 
+#     - Calculates fractional change in voltage between consecutive points
+#     - Finds where change exceeds cutoff * ptp(y) 
+#     - Fits linear background to pre-transition region
+#     - Subtracts if R² > linear_sub_criterion
+#     """
+    
+#     # Early exits
+#     if linear_sub_criterion >= 1.0 or cutoff <= 0:
+#         print(f'[WARNING] Linear subtraction disabled by user params.')
+#         return y
+    
+#     x = np.asarray(x)
+#     y = np.asarray(y)
+    
+#     # Basic masking
+#     mask = (x != 0) & (y != 0) & np.isfinite(x) & np.isfinite(y)
+#     x0 = x[mask]
+#     y0 = y[mask]
+    
+#     if len(x0) < 3:
+#         print(f'[WARNING] Too few points ({len(x0)}) for linear subtraction.')
+#         return y
+    
+#     # Sort by absolute current (low to high)
+#     idx = np.argsort(np.abs(x0))
+#     x_sorted = x0[idx]
+#     y_sorted = y0[idx]
+    
+#     # ============================================================
+#     # DERIVATIVE-BASED TRANSITION DETECTION (FIXED!)
+#     # ============================================================
+#     # Calculate absolute change in voltage between consecutive points
+#     delta_y = np.abs(np.diff(y_sorted))
+    
+#     # Threshold: cutoff * peak-to-peak range
+#     y_range = np.ptp(y_sorted)
+#     threshold = cutoff * y_range
+    
+#     # Find where change exceeds threshold
+#     # Note: delta_y has length n-1, so indices refer to the START of each segment
+#     transition_mask = delta_y > threshold
+    
+#     if not np.any(transition_mask):
+#         # No transition found - entire curve might be linear
+#         print(f'[INFO] No transition detected (Δy < {threshold:.2e} V). Using all points.')
+#         x_lin = x_sorted
+#         y_lin = y_sorted
+#     else:
+#         # First segment where transition occurs
+#         transition_idx = np.where(transition_mask)[0][0]
+        
+#         # transition_idx is the start of the first "big jump" segment
+#         # So include points 0 through transition_idx (inclusive)
+#         if transition_idx < 1:
+#             print(f'[WARNING] Transition at start of curve. No linear region to fit.')
+#             return y
+        
+#         # Linear region is everything up to (not including) the transition
+#         x_lin = x_sorted[:transition_idx + 1]
+#         y_lin = y_sorted[:transition_idx + 1]
+#         print(f'[INFO] Linear region: {len(x_lin)}/{len(x_sorted)} points (Δy threshold: {threshold:.2e} V)')
+    
+#     # ============================================================
+#     # FIT AND SUBTRACT
+#     # ============================================================
+#     try:
+#         from scipy.stats import linregress
+#         res = linregress(x_lin, y_lin)
+#         p = np.array([res.slope, res.intercept])
+#     except Exception as e:
+#         print(f'[WARNING] Linear fit failed: {e}')
+#         return y
+    
+#     # Quality check
+#     y_pred = np.polyval(p, x_lin)
+#     ss_res = np.sum((y_lin - y_pred)**2)
+#     ss_tot = np.sum((y_lin - np.mean(y_lin))**2)
+    
+#     if ss_tot == 0:
+#         print(f'[WARNING] Degenerate linear fit (zero variance).')
+#         return y
+    
+#     r2 = 1 - ss_res / ss_tot
+    
+#     if r2 < linear_sub_criterion:
+#         print(f'[WARNING] Poor linear fit (R²={r2:.3f} < {linear_sub_criterion}).')
+#         return y
+    
+#     # Apply correction to ORIGINAL array
+#     y_corr = y - np.polyval(p, x)
+#     print(f'[INFO] Successful linear subtraction! (R²={r2:.3f}, slope={p[0]:.2e}, bg points: {len(x_lin)})')
+    
+#     return y_corr
 
 def masking(x,y,noise_level):
 
